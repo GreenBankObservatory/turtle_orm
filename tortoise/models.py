@@ -5,32 +5,93 @@
 #   * Make sure each ForeignKey has `on_delete` set to the desired behavior.
 #   * Remove `managed = False` lines if you wish to allow Django to create, modify, and delete the table
 # Feel free to rename the models, but don't rename db_table values or field names.
+
+import logging
+
 from django.db import models
+
+from tortoise.managers import HistoryManager
+
+
+logger = logging.getLogger(__name__)
+
+
+class Observer(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    name = models.CharField(max_length=96)
+
+    class Meta:
+        managed = False
+        db_table = 'Observer'
+
+    def __str__(self):
+        return "Observer {}".format(self.name)
+
+
+class Operator(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    name = models.CharField(max_length=96)
+
+    class Meta:
+        managed = False
+        db_table = 'Operator'
+
+    def __str__(self):
+        return "Operator {}".format(self.name)
 
 
 class History(models.Model):
     id = models.BigAutoField(primary_key=True)
-    obsprocedure_id = models.IntegerField()
-    observer_id = models.IntegerField()
-    operator_id = models.IntegerField()
+    obsprocedure = models.ForeignKey('ObsProcedure', on_delete='PROTECT', verbose_name='Procedure')
+    observer = models.ForeignKey('Observer', on_delete='PROTECT')
+    operator = models.ForeignKey('Operator', on_delete='PROTECT')
     datetime = models.DateTimeField()
     version = models.CharField(max_length=16)
     executed_script = models.TextField()
     executed_state = models.CharField(max_length=14)
     log = models.TextField()
 
+    objects = HistoryManager()
+
     class Meta:
         managed = False
         db_table = 'History'
 
+    def __str__(self):
+        return ("History {} at {}"
+                .format(self.id, self.datetime))
 
-class Obsprocedure(models.Model):
+
+class ObsProjectRef(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    name = models.CharField(unique=True, max_length=96)
+    primary_observer = models.ForeignKey('Observer', on_delete='PROTECT', db_column='primary_observer')
+    session = models.CharField(max_length=16)
+
+    class Meta:
+        managed = False
+        db_table = 'ObsProjectRef'
+
+    def __str__(self):
+        # TODO: Better way to handle this (without changing the DB)?
+        try:
+            observer = self.primary_observer
+        except Observer.DoesNotExist:
+            logger.warning("No Observer exists with ID %s", self.primary_observer_id)
+            observer = None
+
+        return ("ObsProjectRef name: {}, observer: {}, session: {}"
+                .format(self.name, observer, self.session))
+
+
+class ObsProcedure(models.Model):
+    id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=96)
     session = models.CharField(max_length=16)
     script = models.TextField()
-    obsprojectref_id = models.IntegerField()
-    operator_id = models.IntegerField()
-    observer_id = models.IntegerField()
+    obsprojectref = models.ForeignKey('ObsProjectRef', on_delete='PROTECT')
+    operator = models.ForeignKey('Operator', on_delete='PROTECT')
+    observer = models.ForeignKey('Observer', on_delete='PROTECT')
     state = models.CharField(max_length=13)
     status = models.CharField(max_length=7)
     last_modified = models.DateTimeField()
@@ -39,44 +100,26 @@ class Obsprocedure(models.Model):
         managed = False
         db_table = 'ObsProcedure'
 
+    def __str__(self):
+        return ("ObsProcedure name: {}, session: {}, state: {}, status: {}"
+                .format(self.name, self.session, self.state, self.status))
 
-class Obsprojectref(models.Model):
-    name = models.CharField(unique=True, max_length=96)
-    primary_observer = models.IntegerField()
-    session = models.CharField(max_length=16)
-
-    class Meta:
-        managed = False
-        db_table = 'ObsProjectRef'
-
-
-class Observer(models.Model):
-    name = models.CharField(max_length=96)
-
-    class Meta:
-        managed = False
-        db_table = 'Observer'
-
-
-class Operator(models.Model):
-    name = models.CharField(max_length=96)
-
-    class Meta:
-        managed = False
-        db_table = 'Operator'
+    def full_name(self):
+        escaped_name = self.name.replace("/", "\/")
+        return "{}/{}".format(self.obsprojectref.name, escaped_name)
 
 
 class Queue(models.Model):
     id = models.BigAutoField(primary_key=True)
-    obsprocedure_id = models.IntegerField()
-    prev_id = models.BigIntegerField()
-    next_id = models.BigIntegerField()
+    obsprocedure = models.ForeignKey('ObsProcedure', on_delete='PROTECT')
+    # prev = models.ForeignKey('Queue', on_delete='PROTECT')
+    # next = models.ForeignKey('Queue', on_delete='PROTECT')
     name = models.CharField(max_length=96)
     script = models.TextField()
-    project_id = models.IntegerField()
+    project = models.ForeignKey('ObsProjectRef', on_delete='PROTECT')
     session = models.CharField(max_length=16)
-    observer_id = models.IntegerField()
-    operator_id = models.IntegerField()
+    observer = models.ForeignKey('Observer', on_delete='PROTECT')
+    operator = models.ForeignKey('Operator', on_delete='PROTECT')
     time_submitted = models.DateTimeField()
 
     class Meta:
@@ -84,105 +127,11 @@ class Queue(models.Model):
         db_table = 'Queue'
 
 
-class Security(models.Model):
-    id = models.IntegerField(unique=True)
-    authkey = models.CharField(max_length=96)
-
-    class Meta:
-        managed = False
-        db_table = 'Security'
-
-
-class AuthGroup(models.Model):
-    name = models.CharField(unique=True, max_length=80)
-
-    class Meta:
-        managed = False
-        db_table = 'auth_group'
-
-
-class AuthGroupPermissions(models.Model):
-    group_id = models.IntegerField()
-    permission_id = models.IntegerField()
-
-    class Meta:
-        managed = False
-        db_table = 'auth_group_permissions'
-        unique_together = (('group_id', 'permission_id'),)
-
-
-class AuthMessage(models.Model):
-    user_id = models.IntegerField()
-    message = models.TextField()
-
-    class Meta:
-        managed = False
-        db_table = 'auth_message'
-
-
-class AuthPermission(models.Model):
-    name = models.CharField(max_length=50)
-    content_type_id = models.IntegerField()
-    codename = models.CharField(max_length=100)
-
-    class Meta:
-        managed = False
-        db_table = 'auth_permission'
-        unique_together = (('content_type_id', 'codename'),)
-
-
-class AuthUser(models.Model):
-    username = models.CharField(unique=True, max_length=30)
-    first_name = models.CharField(max_length=30)
-    last_name = models.CharField(max_length=30)
-    email = models.CharField(max_length=75)
-    password = models.CharField(max_length=128)
-    is_staff = models.IntegerField()
-    is_active = models.IntegerField()
-    is_superuser = models.IntegerField()
-    last_login = models.DateTimeField()
-    date_joined = models.DateTimeField()
-
-    class Meta:
-        managed = False
-        db_table = 'auth_user'
-
-
-class AuthUserGroups(models.Model):
-    user_id = models.IntegerField()
-    group_id = models.IntegerField()
-
-    class Meta:
-        managed = False
-        db_table = 'auth_user_groups'
-        unique_together = (('user_id', 'group_id'),)
-
-
-class AuthUserUserPermissions(models.Model):
-    user_id = models.IntegerField()
-    permission_id = models.IntegerField()
-
-    class Meta:
-        managed = False
-        db_table = 'auth_user_user_permissions'
-        unique_together = (('user_id', 'permission_id'),)
-
-
-class Configscript(models.Model):
+class ConfigScript(models.Model):
+    id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=96, blank=True, null=True)
     script = models.TextField(blank=True, null=True)
 
     class Meta:
         managed = False
         db_table = 'configscript'
-
-
-class DjangoContentType(models.Model):
-    name = models.CharField(max_length=100)
-    app_label = models.CharField(max_length=100)
-    model = models.CharField(max_length=100)
-
-    class Meta:
-        managed = False
-        db_table = 'django_content_type'
-        unique_together = (('app_label', 'model'),)
