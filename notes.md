@@ -49,3 +49,5 @@ And, of course, some issues... first of all, many models don't have primary keys
 
 
     All of the auth tables were causing issues and we don't need them anyway, so I'm removing them from ORM
+
+    Paul and I agreed that the turtle DB should not be modified by this ORM. So, I've created a readonly user that I will be using.
