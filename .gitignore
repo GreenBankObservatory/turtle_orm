@@ -1,0 +1,4 @@
+*.pyc
+*turtle-orm-env
+*.sublime-workspace
+*.sql
