@@ -16,5 +16,7 @@ fi
 source "$script_dir/../env/bin/activate" || die "Could not activate virtual environment"
 
 export DJANGO_SETTINGS_MODULE=turtle_orm.settings
+export LD_LIBRARY_PATH=/users/gbors/python3.5/lib:$LD_LIBRARY_PATH
+export LDFLAGS="-L/users/gbors/python3.5/lib -lrt"
 
 python -m turtlecli "$@"
