@@ -74,19 +74,7 @@ WSGI_APPLICATION = 'turtle_orm.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'turtle_tchamber_dev',
-        'USER': 'tchamber_query',
-        'HOST': 'colossus',
-        'PASSWORD': '',
-        'PORT': '3306',
-        'OPTIONS': {
-            'sql_mode': 'STRICT_ALL_TABLES'
-        }
-    }
-}
+
 
 
 # Password validation
