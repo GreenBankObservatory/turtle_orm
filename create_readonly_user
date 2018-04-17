@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# NOTE: This _should_ work, but it hasn't actually been tested!
+
+if [ "$USER" != "monctrl" ]; then
+    echo "Must be monctrl"
+    exit 1
+fi
+
+DB=turtle_tchamber_dev
+DB_USER=tchamber_query
+
+mysql -e << EOF
+    GRANT ALL PRIVILEGES ON $DB.* TO $DB_USER@'%';
+    GRANT ALL PRIVILEGES ON $DB.* TO $DB_USER@'localhost';
+    FLUSH PRIVILEGES;
+EOF

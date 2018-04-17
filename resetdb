@@ -1,0 +1,10 @@
+#!/bin/bash
+
+DB=turtle_tchamber_dev
+
+echo "--- Dropping $DB ---"
+mysql -e "DROP DATABASE $DB"
+echo "--- Creating $DB ---"
+mysql -e "CREATE DATABASE $DB" || exit 1
+echo "--- Populating $DB from turtle.prod.sql ---"
+mysql $DB < turtle.prod.sql
