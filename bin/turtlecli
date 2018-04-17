@@ -1,0 +1,20 @@
+#!/bin/bash
+
+script_dir="$(dirname "$(readlink -f "$0")")"
+
+die() {
+    echo "$@" >&2
+    exit 1
+}
+
+cd "$script_dir/.." || die "Could not cd to repo root"
+
+if [ ! -e "./env" ]; then
+    die "You must create a symlink named 'env' that points to your virtual environment!"
+fi
+
+source "$script_dir/../env/bin/activate" || die "Could not activate virtual environment"
+
+export DJANGO_SETTINGS_MODULE=turtle_orm.settings
+
+python -m turtlecli "$@"
