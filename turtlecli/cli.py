@@ -167,6 +167,12 @@ def parse_args():
     )
 
     parser.add_argument(
+        '--script-contents',
+        action='store_true',
+        help='Show the contents of the executed script for each result'
+    )
+
+    parser.add_argument(
         '-i', '--interactive',
         action='store_true',
         help='Drop into an interactive shell after the '
@@ -222,6 +228,17 @@ def gen2(l):
         yield (l[i], l[i+1])
 
 
+def summarize_script_contents(results, interactive=False):
+    for result in results:
+        print("{color}Contents of scripts executed at {exec}{reset}"
+              .format(color=Fore.BLUE,
+                      exec=result.datetime,
+                      reset=Fore.RESET))
+        print("-"*80)
+        print(result.executed_script)
+        print("-"*80)
+
+
 def summarize_script_changes(results, interactive=False):
     # Iterate through results as pairs -- that is, grab every two items out at a time
     for result_a, result_b in gen2(results):
@@ -232,9 +249,10 @@ def summarize_script_changes(results, interactive=False):
                       reset=Fore.RESET))
 
         diff = diff_scripts(result_a.executed_script, result_b.executed_script)
+        print("-"*80)
         print('\n'.join(diff))
+        print("-"*80)
         if interactive:
-            print("-"*80)
             response = input("{}Press any key to see the next diff (or 'q' to exit the loop) {}"
                              .format(Fore.BLUE, Fore.RESET))
             if response.lower().startswith("q"):
@@ -250,6 +268,7 @@ def summarize_logs(results, interactive=False):
                       exec=result.datetime,
                       reset=Fore.RESET))
 
+        print("-"*80)
         print(result.log)
         print("-"*80)
         if interactive:
@@ -336,12 +355,16 @@ def main():
 
     print()
 
+    if args.script_contents:
+        print("Showing script contents for all above results{}"
+              .format(", interactively" if args.interactive else ""))
+        summarize_script_contents(results, interactive=args.interactive)
+
     if args.diff:
         print("Showing differences between all above results{}"
               .format(", interactively" if args.interactive else ""))
         # Note that we assume an interactive session if --interactive is set
         summarize_script_changes(results, interactive=args.interactive)
-
 
     if args.logs:
         print("Showing logs for all above results{}"
