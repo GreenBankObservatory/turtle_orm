@@ -167,7 +167,7 @@ def parse_args():
     )
 
     parser.add_argument(
-        '--script-contents',
+        '--show-scripts',
         action='store_true',
         help='Show the contents of the executed script for each result'
     )
@@ -237,6 +237,12 @@ def summarize_script_contents(results, interactive=False):
         print("-"*80)
         print(result.executed_script)
         print("-"*80)
+        
+        if interactive:
+            response = input("{}Press any key to see the next diff (or 'q' to exit the loop) {}"
+                             .format(Fore.BLUE, Fore.RESET))
+            if response.lower().startswith("q"):
+                break
 
 
 def summarize_script_changes(results, interactive=False):
@@ -355,7 +361,7 @@ def main():
 
     print()
 
-    if args.script_contents:
+    if args.show_scripts:
         print("Showing script contents for all above results{}"
               .format(", interactively" if args.interactive else ""))
         summarize_script_contents(results, interactive=args.interactive)
