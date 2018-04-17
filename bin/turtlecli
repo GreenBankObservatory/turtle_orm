@@ -19,4 +19,12 @@ export DJANGO_SETTINGS_MODULE=turtle_orm.settings
 export LD_LIBRARY_PATH=/users/gbors/python3.5/lib:$LD_LIBRARY_PATH
 export LDFLAGS="-L/users/gbors/python3.5/lib -lrt"
 
+if [ -z "$SSH_CONNECTION" ]; then
+    echo "WARNING: This will be very slow on your workstation! Consider ssh'ing to a data processing machine." >&2
+    echo "Continue? [y/n] "
+    read -r response
+    if [ "${response,,}" != "y" ]; then
+        die "Well alright then!"
+    fi
+fi
 python -m turtlecli "$@"
