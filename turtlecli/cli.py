@@ -27,7 +27,8 @@ from turtlecli.utils import (
     in_ipython,
     gen2,
     formatSql,
-    DEFAULT_HISTORY_TABLE_FIELDNAMES
+    DEFAULT_HISTORY_TABLE_FIELDNAMES,
+    timeOfLastQuery
 )
 
 from turtlecli.reports import DiffReport, LogReport, ScriptReport
@@ -52,47 +53,48 @@ def parse_kwargs(kwargs_list):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        '--observers',
-        nargs='+',
-        metavar='OBSERVER',
-        help='Filter for given observer(s)'
+    parser = argparse.ArgumentParser(
+        prog='turtlecli',
+        description='A program for easily querying the Turtle database'
     )
 
-    parser.add_argument(
-        '--operators',
-        nargs='+',
-        metavar='OPERATOR',
-        help='Filter for given operator(s)'
+    ### General Group ###
+    general_group = parser.add_argument_group(
+        title='General',
+        description='General-purpose arguments'
+    )
+    general_group.add_argument(
+        '--limit',
+        type=int,
+        default=10,
+        help='Limit results to the given number'
+    )
+    general_group.add_argument(
+        '-i', '--interactive',
+        action='store_true',
+        help='Drop into an interactive shell after the '
+             'query is performed'
+    )
+    general_group.add_argument(
+        '--fuzzy',
+        action='store_true',
+        help='Make searches fuzzier (case insensitive, incomplete matches, etc.). Note that this will probably be a bit slower.'
     )
 
-    # TODO: Allow multiple options here
-    parser.add_argument(
-        '--time',
-        metavar='DATETIME',
-        type=dp.parse,
-        help='The time of the thing'
+    ### Things Group ###
+    things_group = parser.add_argument_group(
+        title='"Things"',
+        description='Arguments that are in the domain of "things" to filter by'
     )
-    parser.add_argument(
-        '-B', '--buffer',
-        type=float,
-        default=0.25,
-        help='Designates the size of the window that projects '
-             'will be searched for within. Units are determined by --units. '
-             'Note that the default will only be reasonable if the default '
-             'unit is used.'
-    )
-    parser.add_argument(
-        '--projects',
+    things_group.add_argument(
+        '-p', '--projects',
         metavar='PROJECT',
         nargs='+',
         help='The name(s) of the project(s). If multiple projects are given, '
              'then results will be shown for all of them'
     )
-    parser.add_argument(
-        '--scripts',
+    things_group.add_argument(
+        '-s', '--scripts',
         metavar='SCRIPT',
         nargs='+',
         help='The name(s) of the script(s). If multiple scripts are given, '
@@ -101,121 +103,174 @@ def parse_args():
              'NOTE: This option may give unexpected results if --projects is not specified, '
              'since script names are not guaranteed to be unique across all projects!'
     )
-    parser.add_argument(
+    things_group.add_argument(
+        '-o', '--observers',
+        nargs='+',
+        metavar='OBSERVER',
+        help='Filter for given observer(s)'
+    )
+    things_group.add_argument(
+        '-O', '--operators',
+        nargs='+',
+        metavar='OPERATOR',
+        help='Filter for given operator(s)'
+    )
+    things_group.add_argument(
+        '--state',
+        help="Filter based on the state of script execution",
+        choices=['completed', 'in_progress', 'aborted']
+    )
+    
+    ### Time Group ###
+    time_group = parser.add_argument_group(
+        title='Time',
+        description='Arguments that filter within the time domain'
+    )
+    time_group.add_argument(
         '-l', '--last',
         metavar="DELTA",
         type=float,
         help='Limit to scripts executed within the last DELTA time units. '
              'See --units for details on time unit options'
     )
-    parser.add_argument(
+    time_group.add_argument(
         '-a', '--after', '--start',
         metavar='DATETIME',
         type=dp.parse,
         help='Limit to scripts executed after this time'
     )
-    parser.add_argument(
+    time_group.add_argument(
         '-b', '--before', '--end',
         metavar='DATETIME',
         type=dp.parse,
         help='Limit to scripts executed before this time'
     )
 
-    parser.add_argument(
-        '-g', '--group-by',
-        default='project',
-        # These are simply what I consider a reasonable set of things to filter by
-        choices=['id', 'obsprocedure', 'observer', 'operator', 'datetime']
+    # TODO: Allow multiple options here
+    time_group.add_argument(
+        '-t', '--time',
+        metavar='DATETIME',
+        type=dp.parse,
+        help='The time of the thing'
     )
-
-    parser.add_argument(
-        '-o', '--order-by',
-        type=order_type,
-        default='datetime',
-        # These are simply what I consider a reasonable set of things to filter by
-        choices=['id', 'obsprocedure', 'observer', 'operator', 'datetime']
+    time_group.add_argument(
+        '-B', '--buffer',
+        type=float,
+        default=0.25,
+        help='Designates the size of the window that projects '
+             'will be searched for within. Units are determined by --units. '
+             'Note that the default will only be reasonable if the default '
+             'unit is used.'
     )
-
-    parser.add_argument(
-        '--direction',
-        default='descending',
-        choices=['ascending', 'descending']
-    )
-
-    parser.add_argument(
+    time_group.add_argument(
         '-u', '--unit',
         default='hours',
         # All (reasonable) choices that can be set for timedelta
         choices=['seconds', 'minutes', 'hours', 'days', 'weeks']
     )
 
-    parser.add_argument(
+    ### Sorting Group ###
+    sorting_group = parser.add_argument_group(
+        title='Sorting',
+        description='Arguments specify sorting options'
+    )
+    # sorting_group.add_argument(
+    #     '-g', '--group-by',
+    #     default='project',
+    #     # These are simply what I consider a reasonable set of things to filter by
+    #     choices=['id', 'obsprocedure', 'observer', 'operator', 'datetime']
+    # )
+    sorting_group.add_argument(
+        '-S', '--sort-by',
+        type=order_type,
+        default='datetime',
+        # These are simply what I consider a reasonable set of things to filter by
+        choices=['id', 'obsprocedure', 'observer', 'operator', 'datetime']
+    )
+    sorting_group.add_argument(
+        '-d', '--direction',
+        default='descending',
+        choices=['ascending', 'descending']
+    )
+
+    ### Output Group ###
+    output_group = parser.add_argument_group(
+        title='Output',
+        description='Arguments specify output options'
+    )
+    output_group.add_argument(
         # TODO: --diff is deprecated                        
         '--show-diffs', '--diff',
         action='store_true',
         help='Show the differences between the script for each result'
     )
-
-    parser.add_argument(
+    output_group.add_argument(
         '--show-logs', '--logs',
         # TODO: --logs is deprecated        
         action='store_true',
         help='Show the logs for each result'
     )
-
-    parser.add_argument(
+    output_group.add_argument(
         '--show-scripts',
         action='store_true',
         help='Show the contents of the executed script for each result'
     )
 
-    parser.add_argument(
-        '--state',
-        help="Filter based on the state of script execution",
-        choices=['completed', 'in_progress', 'aborted']
+    ### Advanced Group ###
+    advanced_group = parser.add_argument_group(
+        title='Advanced',
+        description='Note that these will take a LONG time. It is '
+                    'advisable to couple them with a reasonable --limit value. '
+                    'Note also that none of these are case-sensitive'
     )
-
-    parser.add_argument(
-        '--limit',
-        type=int,
-        help='Limit results to the given number'
-    )
-
-    parser.add_argument(
-        '-i', '--interactive',
-        action='store_true',
-        help='Drop into an interactive shell after the '
-             'query is performed'
-    )
-
-    parser.add_argument(
-        '--fuzzy',
-        action='store_true',
-        help='Make searches fuzzier (case insensitive, incomplete matches, etc.). Note that this will probably be a bit slower.'
-    )
-
-    parser.add_argument(
-        '-c', '--config-kwargs',
+    advanced_group.add_argument(
+        '-k', '--kwargs',
         nargs='+',
         metavar='KEY=VALUE',
-        help='Expected format: key=value. This will take a long time! '
-             'NOTE: It is prudent to run this in conjunction with --limit '
-             'in order to avoid VERY long queries.'
+        help='Search for keyword=value style statements within observation '
+             'scripts. Note that whitespace DOES NOT matter here. Also note '
+             'that this is simply a shortcut for --script-contains.'
+    )
+    advanced_group.add_argument(
+        '--script-contains',
+        nargs='+',
+        metavar='STRING',
+        help='One or more strings that will be searched for '
+             'within scripts'
+    )
+    advanced_group.add_argument(
+        '--log-contains',
+        nargs='+',
+        metavar='STRING',
+        help='One or more strings that will be searched for '
+             'within logs'
+    )
+    advanced_group.add_argument(
+        '--script-regex',
+        nargs='+',
+        metavar='REGEX',
+        help='One or more Python-style regular expression that will be '
+             'used to search within scripts'
+    )
+    advanced_group.add_argument(
+        '--log-regex',
+        nargs='+',
+        metavar='REGEX',
+        help='One or more Python-style regular expression that will be '
+             'used to search within logs'
     )
 
-    # TODO: Fuzzy option. Would do things like search for names using icontains
-    # TODO: Search within scripts/logs. Obviously slow, but could be useful
     args = parser.parse_args()
 
-    if args.config_kwargs:
-        # Parse the keyword-value strings inside of config_kwargs. If there is
+    if args.kwargs:
+        # Parse the keyword-value strings inside of kwargs. If there is
         # a ValueError, consider it a parsing error
-        # Replace the user's config_kwargs with the version we have parsed into a dict
+        # Replace the user's kwargs with the version we have parsed into a dict
         try:
-            args.config_kwargs = parse_kwargs(args.config_kwargs)
+            args.kwargs = parse_kwargs(args.kwargs)
         except ValueError:
-            parser.error("config_kwargs must be of the format 'keyword=value'; got {}"
-                         .format(args.config_kwargs))
+            parser.error("kwargs must be of the format 'keyword=value'; got {}"
+                         .format(args.kwargs))
 
     ### Additional error checking ###
 
@@ -309,11 +364,42 @@ def main():
                 description_parts.append("executed before {}".format(args.before))
         results &= filterByRange(args.after, args.before)
 
+    # Handle script contains
+    if args.script_contains:
+        query = Q()
+        for contains in args.script_contains:
+            query |= Q(executed_script__icontains=contains)
+
+        results &= History.objects.filter(query)
+        
+    # Handle log contains
+    if args.log_contains:
+        query = Q()
+        for contains in args.log_contains:
+            query |= Q(log__icontains=contains)
+
+        results &= History.objects.filter(query)
+
+    # Handle script regex
+    if args.script_regex:
+        query = Q()
+        for regex in args.script_regex:
+            query |= Q(executed_script__iregex=regex)
+
+        results &= History.objects.filter(query)
+        
+    # Handle log regex
+    if args.log_regex:
+        query = Q()
+        for regex in args.log_regex:
+            query |= Q(log__iregex=regex)
+
+        results &= History.objects.filter(query)
 
     # Handle kwargs
-    if args.config_kwargs:
+    if args.kwargs:
         query = Q()
-        for keyword, value in args.config_kwargs.items():
+        for keyword, value in args.kwargs.items():
             # TODO: How to also handle &= ?
             query |= Q(executed_script__iregex=generateRegexpStatement(keyword, value))
 
@@ -322,15 +408,16 @@ def main():
 
     # TODO: Consider testing results only once?
     # The following operations only make sense if results have been found
-    if results.exists() and args.order_by:
+    if results.exists() and args.sort_by:
         description_parts.append("ordered by {} ({})"
-                                 .format(args.order_by, args.direction))
+                                 .format(args.sort_by, args.direction))
         field = "{}{}".format('-' if args.direction == 'descending' else '',
-                              args.order_by)
+                              args.sort_by)
         results = results.order_by(field)
 
     # This must occur after ordering!
-    if results.exists() and args.limit:
+    # Don't limit if limit is set to 0
+    if results.exists() and args.limit != 0:
         results = results[:args.limit]
 
     # if args.group_by:
@@ -341,8 +428,20 @@ def main():
     print(formatSql(str(results.query)))
     print()
 
-    if results.exists():
-        df = results.to_dataframe(fieldnames=DEFAULT_HISTORY_TABLE_FIELDNAMES)
+    # This is where the query is actually executed
+    df = results.to_dataframe(fieldnames=DEFAULT_HISTORY_TABLE_FIELDNAMES)
+    
+    num_results = len(df)
+    if args.limit != 0 and args.limit <= num_results:
+        limit_str = (
+            ". Results limited to {}; for full results re-run with --limit 0"
+            .format(num_results)
+        )
+    else:
+        limit_str = ""
+    print("Found {} results in {} seconds{}"
+          .format(num_results, timeOfLastQuery(), limit_str))
+    if not df.empty:
         print("Displaying scripts {}".format(", ".join(description_parts)))
         print(genHistoryTable(df))
     else:
@@ -377,9 +476,8 @@ def main():
 if __name__ == '__main__':
     main()
 
-# TODO: Search within scripts. Allow regex or wildcard
-# TODO: Search within logs. Allow regex or wildcard
-# TODO: Group arguments in some sensible way
+# TODO: Fuzzy option. Would do things like search for names using icontains
+# TODO: Handle &= operator for queries. Some sort of option will be needed
 # TODO: Flesh out logging
 # TODO: Finish refactoring of codebase
 # TODO: Consider subcommands for things like "Show me details about a specific ObsProcedure" -- this is history-centric so far
