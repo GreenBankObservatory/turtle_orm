@@ -1,6 +1,12 @@
+import logging
+
+from colorama import Fore
+import sqlparse
 from tabulate import tabulate
 
-from tortoise.models import ObsProcedure, History
+
+logger = logging.getLogger(__name__)
+
 
 DEFAULT_HISTORY_TABLE_HEADERS = (
     'Project Name',
@@ -22,19 +28,70 @@ DEFAULT_HISTORY_TABLE_FIELDNAMES = (
     'executed_state'
 )
 
-def formatTable(table, fieldnames, headers):
-    return tabulate(
-        table.to_dataframe(fieldnames=fieldnames),
-        headers=headers)
+def formatTable(table, headers):
+    return tabulate(table, headers=headers)
 
-def formatHistoryTable(histories, headers=None, fieldnames=None):
+def genHistoryTable(history_df, headers=None):
     if not headers:
         headers = DEFAULT_HISTORY_TABLE_HEADERS
 
-    if not fieldnames:
-        fieldnames = DEFAULT_HISTORY_TABLE_FIELDNAMES
-    
-    if len(headers) != len(fieldnames):
-        raise ValueError("headers and fieldnames must be the same length!")
+    if len(headers) != len(history_df.columns):
+        raise ValueError("Number of headers must be equal to number of columns!")
 
-    return formatTable(histories, fieldnames, headers)
+    return formatTable(history_df, headers)
+
+def order_type(foo):
+    return foo
+
+def in_ipython():
+    """Determine whether this script is being run via IPython; return bool"""
+
+    try:
+        __IPYTHON__
+    except NameError:
+        # logger.debug("Not in IPython")
+        return False
+    else:
+        # logger.debug("In IPython")
+        return True
+
+
+# From: https://chezsoi.org/lucas/blog/colored-diff-output-with-python.html 
+def color_diff(diff):
+    for line in diff:
+        if line.startswith('+'):
+            yield Fore.GREEN + line + Fore.RESET
+        elif line.startswith('-'):
+            yield Fore.RED + line + Fore.RESET
+        elif line.startswith('^'):
+            yield Fore.BLUE + line + Fore.RESET
+        else:
+            yield line
+
+def gen2(l):
+    """Given an iterable, generate tuples of every two elements
+
+    In : list(gen2([1,2,3]))
+    Out: [(1, 2), (2, 3)]
+    """
+
+    for i in range(len(l) - 1):
+        yield (l[i], l[i+1])
+
+
+def formatSql(sql, indent=False):
+    """Format and reindent the given `sql` and return it.
+
+    Optionally indent every line of the SQL before returning it."""
+
+    formatted = sqlparse.format(sql, reindent=True, keyword_case='upper')
+    if indent:
+        lines = []
+        for line in formatted.split("\n"):
+            lines.append("    {}".format(line))
+        formatted = "\n".join(lines)
+
+    logger.debug("Formatted %s into %s", sql, formatted)
+    # Hack to avoid Session being treated as a SQL keyword (converted to SESSION)
+    formatted = formatted.replace("SESSION", "Session")
+    return formatted
