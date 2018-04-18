@@ -2,78 +2,61 @@
 
 import argparse
 import inspect
+import logging
 import os
 import pkgutil
 
 import dateutil.parser as dp
 import IPython
-from colorama import Fore, Back, Style
-import difflib
 
 from django.utils import timezone
-from django.db.models import Sum
-
-from turtlecli.utils import (
-    formatHistoryTable,
-    DEFAULT_HISTORY_TABLE_HEADERS,
-    DEFAULT_HISTORY_TABLE_FIELDNAMES
-)
-
-from turtlecli import subcommands
+from django.db.models import Q
 
 from tortoise.models import History
 
-"""docstring"""
+from turtlecli.filters import (
+    filterByTime,
+    filterByRange,
+    filterByProject,
+    filterByScript
+)
+
+from turtlecli.utils import (
+    genHistoryTable,
+    order_type,
+    in_ipython,
+    gen2,
+    formatSql,
+    DEFAULT_HISTORY_TABLE_FIELDNAMES
+)
+
+from turtlecli.reports import DiffReport, LogReport, ScriptReport
 
 
-def filterByTime(dt, buffer):
-    return History.objects.filter(
-        datetime__gte=dt - buffer,
-        datetime__lte=dt + buffer
-    )
+"""Commandline Interface to the Turtle DB"""
 
-def filterByRange(start, end):
-    results = History.objects.all()
-    if start:
-        results &= History.objects.filter(datetime__gte=start)
-    if end:
-        results &= History.objects.filter(datetime__lte=end)
-    return results
 
-def filterByProject(project_names):
-    return History.objects.filter(obsprocedure__obsprojectref__name__in=project_names)
-
-def filterByScript(script_names):
-    return History.objects.filter(obsprocedure__name__in=script_names)
+logger = logging.getLogger(__name__)
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    # subparsers = parser.add_subparsers(
-    #     title='subcommands',
-    #     # description='valid subcommands',
-    #     # help='sub-command help'
-    # )
-    # # Required due to argparse bug: https://stackoverflow.com/a/18283730/1883424
-    # subparsers.required = True
-    # subparsers.dest = 'subcommand'
-
-    # for importer, module_name, _ in pkgutil.iter_modules([os.path.dirname(__file__) + "/subcommands"]):
-    #     # Use level_name_regex to identify relevant "level" modules
-    #     module = importer.find_module(module_name).load_module(module_name)
-    #     module.add_parser(subparsers)
-
     parser.add_argument(
-        '--observer',
-        help='Filter for given observer'
+        '--observers',
+        nargs='+',
+        metavar='OBSERVER',
+        help='Filter for given observer(s)'
     )
 
     parser.add_argument(
-        '--operator',
-        help='Filter for given operator'
+        '--operators',
+        nargs='+',
+        metavar='OPERATOR',
+        help='Filter for given operator(s)'
     )
 
+    # TODO: Allow multiple options here
     parser.add_argument(
         '--time',
         metavar='DATETIME',
@@ -114,13 +97,13 @@ def parse_args():
              'See --units for details on time unit options'
     )
     parser.add_argument(
-        '-a', '--after',
+        '-a', '--after', '--start',
         metavar='DATETIME',
         type=dp.parse,
         help='Limit to scripts executed after this time'
     )
     parser.add_argument(
-        '-b', '--before',
+        '-b', '--before', '--end',
         metavar='DATETIME',
         type=dp.parse,
         help='Limit to scripts executed before this time'
@@ -155,13 +138,15 @@ def parse_args():
     )
 
     parser.add_argument(
-        '--diff',
+        # TODO: --diff is deprecated                        
+        '--show-diffs', '--diff',
         action='store_true',
         help='Show the differences between the script for each result'
     )
 
     parser.add_argument(
-        '--logs',
+        '--show-logs', '--logs',
+        # TODO: --logs is deprecated        
         action='store_true',
         help='Show the logs for each result'
     )
@@ -173,127 +158,60 @@ def parse_args():
     )
 
     parser.add_argument(
+        '--state',
+        help="Filter based on the state of script execution",
+        choices=['completed', 'in_progress', 'aborted']
+    )
+
+    parser.add_argument(
+        '--limit',
+        type=int,
+        help='Limit results to the given number'
+    )
+
+    parser.add_argument(
         '-i', '--interactive',
         action='store_true',
         help='Drop into an interactive shell after the '
              'query is performed'
     )
 
+    parser.add_argument(
+        '--fuzzy',
+        action='store_true',
+        help='Make searches fuzzier (case insensitive, incomplete matches, etc.). Note that this will probably be a bit slower.'
+    )
 
-
+    # TODO: Fuzzy option. Would do things like search for names using icontains
+    # TODO: Search within scripts/logs. Obviously slow, but could be useful
     args = parser.parse_args()
+
+    ### Additional error checking ###
+
+    # Ensure that the many time-related options aren't given together
+    time_arg_bools = [
+        bool(args.time),
+        bool(args.last),
+        bool(args.after or args.before)
+    ]
+    if time_arg_bools.count(True) > 1:
+        parser.error("Only one of {}, {}, or {} may be given"
+                     .format("--time",
+                             "--last",
+                             "(--after or --before)"))
+
+    # Ensure that --buffer isn't given without --time
+    # TODO: buffer has a default -- how to handle?
+    # if args.buffer and not args.time:
+    #     parser.error("--buffer has no effect if --time is not given!")
+
+    # Ensure that the buffer isn't negative
     if args.buffer < 0:
         parser.error("--buffer value must be greater than 0")
-    # try:
     args.buffer = timezone.timedelta(**{args.unit: args.buffer})
-    # except:
+
     return args
 
-def order_type(foo):
-    return foo
-
-def in_ipython():
-    """Determine whether this script is being run via IPython; return bool"""
-
-    try:
-        __IPYTHON__
-    except NameError:
-        # logger.debug("Not in IPython")
-        return False
-    else:
-        # logger.debug("In IPython")
-        return True
-
-
-# From: https://chezsoi.org/lucas/blog/colored-diff-output-with-python.html 
-def color_diff(diff):
-    for line in diff:
-        if line.startswith('+'):
-            yield Fore.GREEN + line + Fore.RESET
-        elif line.startswith('-'):
-            yield Fore.RED + line + Fore.RESET
-        elif line.startswith('^'):
-            yield Fore.BLUE + line + Fore.RESET
-        else:
-            yield line
-
-def gen2(l):
-    """Given an iterable, generate tuples of every two elements
-
-    In : list(gen2([1,2,3]))
-    Out: [(1, 2), (2, 3)]
-    """
-
-    for i in range(len(l) - 1):
-        yield (l[i], l[i+1])
-
-
-def summarize_script_contents(results, interactive=False):
-    for result in results:
-        print("{color}Contents of scripts executed at {exec}{reset}"
-              .format(color=Fore.BLUE,
-                      exec=result.datetime,
-                      reset=Fore.RESET))
-        print("-"*80)
-        print(result.executed_script)
-        print("-"*80)
-        
-        if interactive:
-            response = input("{}Press any key to see the next diff (or 'q' to exit the loop) {}"
-                             .format(Fore.BLUE, Fore.RESET))
-            if response.lower().startswith("q"):
-                break
-
-
-def summarize_script_changes(results, interactive=False):
-    # Iterate through results as pairs -- that is, grab every two items out at a time
-    for result_a, result_b in gen2(results):
-        print("{color}Differences between scripts A (executed {a}) and B (executed {b}){reset}"
-              .format(color=Fore.BLUE,
-                      a=result_a.datetime,
-                      b=result_b.datetime,
-                      reset=Fore.RESET))
-
-        diff = diff_scripts(result_a.executed_script, result_b.executed_script)
-        print("-"*80)
-        print('\n'.join(diff))
-        print("-"*80)
-        if interactive:
-            response = input("{}Press any key to see the next diff (or 'q' to exit the loop) {}"
-                             .format(Fore.BLUE, Fore.RESET))
-            if response.lower().startswith("q"):
-                break
-
-
-def summarize_logs(results, interactive=False):
-    for result in results:
-        print("{color}Logs for script {script}, executed at {exec} by observer {observer}{reset}"
-              .format(color=Fore.BLUE,
-                      observer=result.observer.name,
-                      script=result.obsprocedure.name,
-                      exec=result.datetime,
-                      reset=Fore.RESET))
-
-        print("-"*80)
-        print(result.log)
-        print("-"*80)
-        if interactive:
-            response = input("{}Press any key to see the next log (or 'q' to exit the loop) {}"
-                             .format(Fore.BLUE, Fore.RESET))
-            if response.lower().startswith("q"):
-                break
-
-
-def diff_scripts(script_a, script_b, compact=True):
-    script_a_lines = script_a.split('\n')
-    script_b_lines = script_b.split('\n')
-
-    if compact:
-        diff = difflib.unified_diff(script_a_lines, script_b_lines)
-    else:
-        diff = difflib.ndiff(script_a_lines, script_b_lines)
-    colordiff = color_diff(diff)
-    return colordiff
 
 def main():
     args = parse_args()
@@ -312,15 +230,30 @@ def main():
                                  .format(plural, args.scripts))
         results &= filterByScript(args.scripts)
 
-    if args.observer:
-        description_parts.append("by observer {}".format(args.observer))
-        results &= History.objects.filter(observer__name=args.observer)
+    if args.observers:
+        plural = 's' if args.observers and len(args.observers) > 1 else ''
+        description_parts.append("by observer{} {}"
+                                 .format(plural, args.observers))
+        if args.fuzzy:
+            query = Q()
+            for observer in args.observers:
+                query = Q(observer__name__icontains=observer)
+            results &= History.objects.filter(query)
+        else:
+            results &= History.objects.filter(observer__name__in=args.observers)
 
-    if args.operator:
-        description_parts.append("with operator {}".format(args.operator))
-        results &= History.objects.filter(operator__name=args.operator)
+    if args.operators:
+        plural = 's' if args.operators and len(args.operators) > 1 else ''
+        description_parts.append("with operator{} {}"
+                                 .format(plural, args.operators))
+        results &= History.objects.filter(operator__name__in=args.operators)
 
-
+    if args.state:
+        # Argument choices are shortened forms of the possible field values
+        state = "obs_{}".format(args.state)
+        description_parts.append("with state {}".format(state))
+        results &= History.objects.filter(executed_state=state)
+        
     if args.time:
         description_parts.append("that occurred within {} {} of {}"
                                  .format(args.buffer, args.unit, args.time))
@@ -342,57 +275,70 @@ def main():
                 description_parts.append("executed before {}".format(args.before))
         results &= filterByRange(args.after, args.before)
 
+    # TODO: Consider testing results only once?
     # The following operations only make sense if results have been found
-    if results and args.order_by:
+    if results.exists() and args.order_by:
         description_parts.append("ordered by {} ({})"
                                  .format(args.order_by, args.direction))
         field = "{}{}".format('-' if args.direction == 'descending' else '',
                               args.order_by)
         results = results.order_by(field)
 
+    # This must occur after ordering!
+    if results.exists() and args.limit:
+        results = results[:args.limit]
+
     # if args.group_by:
     #     results = results.group_by(args.group_by)
 
-    if results:
+    # TODO: Only show if verbosity >1 ?
+    print("Executing query:")
+    print(formatSql(str(results.query)))
+
+    if results.exists():
+        df = results.to_dataframe(fieldnames=DEFAULT_HISTORY_TABLE_FIELDNAMES)
         print("Displaying scripts {}".format(", ".join(description_parts)))
-        print(formatHistoryTable(results))
+        print(genHistoryTable(df))
     else:
         print("No scripts found {}".format(", ".join(description_parts)))
 
     print()
 
     if args.show_scripts:
-        print("Showing script contents for all above results{}"
-              .format(", interactively" if args.interactive else ""))
-        summarize_script_contents(results, interactive=args.interactive)
+        ScriptReport(results, args.interactive).print_report()
 
-    if args.diff:
-        print("Showing differences between all above results{}"
-              .format(", interactively" if args.interactive else ""))
-        # Note that we assume an interactive session if --interactive is set
-        summarize_script_changes(results, interactive=args.interactive)
+    if args.show_diffs:
+        if set(results.values_list('obsprocedure__name', flat=True)):
+            logger.warning("Multiple script names detected; diffs may not make much sense!")
+        DiffReport(results, args.interactive).print_report()
 
-    if args.logs:
-        print("Showing logs for all above results{}"
-              .format(", interactively" if args.interactive else ""))
-        summarize_logs(results, interactive=args.interactive)
-        
+    if args.show_logs:
+        LogReport(results, args.interactive).print_report()
+
     # If the user has requested an interactive session, enter it now.
     # However, don't bother trying if we are already being run via IPython,
     # because it won't work
     if args.interactive and not in_ipython():
-        print("Results are available in the `results` variable.")
-        # logger.debug("Entering interactive mode")
+        r = results
+        logger.debug("Entering interactive mode")
+        print("Results are available as:")
+        print("  * A QuerySet, in the `r` variable.")
+        print("  * As a DataFrame, in the `df` variable.")
         IPython.embed(display_banner=False, exit_msg="Hope you had fun!")
-        # logger.debug("Exited interactive mode")
-
-    # Execute the selected subcommand
-    # try:
-    #     args.func(args)
-    # except AttributeError as error:
-    #     raise AttributeError("Every subparser must set its 'func' attribute! "
-    #                          "Use 'parser.set_defaults(func=getByTime)'") from error
+        logger.debug("Exited interactive mode")
 
 
 if __name__ == '__main__':
     main()
+
+# TODO: Search within scripts. Allow regex or wildcard
+# TODO: Search within logs. Allow regex or wildcard
+# TODO: Flesh out logging
+# TODO: Finish refactoring of codebase
+# TODO: Consider subcommands for things like "Show me details about a specific ObsProcedure" -- this is history-centric so far
+# TODO: Port over the code from findObsScript that handles parsing of config keywords
+# TODO: Provide easy way to search scheduling block executions (from log files)?
+# TODO: Add --interactive-reports
+# TODO: Unit tests!
+# TODO: Sphinx documentation -- how best to document each argument (with examples)?
+# TODO: Doctests -- this seems like the perfect application
