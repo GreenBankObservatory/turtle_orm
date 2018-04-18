@@ -1,5 +1,10 @@
 import logging
 
+from django.db import connection
+
+from pygments import highlight
+from pygments.lexers import MySqlLexer
+from pygments.formatters import TerminalFormatter
 from colorama import Fore
 import sqlparse
 from tabulate import tabulate
@@ -94,4 +99,9 @@ def formatSql(sql, indent=False):
     logger.debug("Formatted %s into %s", sql, formatted)
     # Hack to avoid Session being treated as a SQL keyword (converted to SESSION)
     formatted = formatted.replace("SESSION", "Session")
-    return formatted
+    return highlight(formatted, MySqlLexer(), TerminalFormatter())
+
+
+def timeOfLastQuery():
+    return connection.queries[-1]['time']
+        
