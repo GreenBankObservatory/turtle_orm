@@ -38,6 +38,18 @@ from turtlecli.reports import DiffReport, LogReport, ScriptReport
 
 logger = logging.getLogger(__name__)
 
+def parse_kwargs(kwargs_list):
+    """Given an iterable of keyward-value strings of the format "keyword=value"
+    parse them into a dict and return it.
+
+    Values will be stripped of whitespace.
+    """
+    split = [[val.strip() for val in kwarg.split("=")] for kwarg in kwargs_list]
+    logger.debug("Split %s into %s", split, kwargs_list)
+    kwargs =  {keyword: value for keyword, value in split}
+    logger.debug("Converted %s into %s", split, kwargs)
+    return kwargs
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -182,9 +194,28 @@ def parse_args():
         help='Make searches fuzzier (case insensitive, incomplete matches, etc.). Note that this will probably be a bit slower.'
     )
 
+    parser.add_argument(
+        '-c', '--config-kwargs',
+        nargs='+',
+        metavar='KEY=VALUE',
+        help='Expected format: key=value. This will take a long time! '
+             'NOTE: It is prudent to run this in conjunction with --limit '
+             'in order to avoid VERY long queries.'
+    )
+
     # TODO: Fuzzy option. Would do things like search for names using icontains
     # TODO: Search within scripts/logs. Obviously slow, but could be useful
     args = parser.parse_args()
+
+    if args.config_kwargs:
+        # Parse the keyword-value strings inside of config_kwargs. If there is
+        # a ValueError, consider it a parsing error
+        # Replace the user's config_kwargs with the version we have parsed into a dict
+        try:
+            args.config_kwargs = parse_kwargs(args.config_kwargs)
+        except ValueError:
+            parser.error("config_kwargs must be of the format 'keyword=value'; got {}"
+                         .format(args.config_kwargs))
 
     ### Additional error checking ###
 
@@ -212,6 +243,9 @@ def parse_args():
 
     return args
 
+def generateRegexpStatement(keyword, value):
+    return (r'{keyword}\s*=\s*[\'\"]{value}[\'\"]'
+            .format(keyword=keyword, value=value))
 
 def main():
     args = parse_args()
@@ -275,6 +309,17 @@ def main():
                 description_parts.append("executed before {}".format(args.before))
         results &= filterByRange(args.after, args.before)
 
+
+    # Handle kwargs
+    if args.config_kwargs:
+        query = Q()
+        for keyword, value in args.config_kwargs.items():
+            # TODO: How to also handle &= ?
+            query |= Q(executed_script__iregex=generateRegexpStatement(keyword, value))
+
+        results &= History.objects.filter(query)
+
+
     # TODO: Consider testing results only once?
     # The following operations only make sense if results have been found
     if results.exists() and args.order_by:
@@ -294,6 +339,7 @@ def main():
     # TODO: Only show if verbosity >1 ?
     print("Executing query:")
     print(formatSql(str(results.query)))
+    print()
 
     if results.exists():
         df = results.to_dataframe(fieldnames=DEFAULT_HISTORY_TABLE_FIELDNAMES)
@@ -333,6 +379,7 @@ if __name__ == '__main__':
 
 # TODO: Search within scripts. Allow regex or wildcard
 # TODO: Search within logs. Allow regex or wildcard
+# TODO: Group arguments in some sensible way
 # TODO: Flesh out logging
 # TODO: Finish refactoring of codebase
 # TODO: Consider subcommands for things like "Show me details about a specific ObsProcedure" -- this is history-centric so far
