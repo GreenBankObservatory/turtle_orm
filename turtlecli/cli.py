@@ -5,6 +5,7 @@ import inspect
 import logging
 import os
 import pkgutil
+import sys
 
 import dateutil.parser as dp
 import IPython
@@ -37,8 +38,11 @@ from turtlecli.reports import DiffReport, LogReport, ScriptReport
 """Commandline Interface to the Turtle DB"""
 
 
-logger = logging.getLogger(__name__)
+file_logger = logging.getLogger('{}_file'.format(__name__))
 
+logger = logging.getLogger('{}_user'.format(__name__))
+
+print(logger.name)
 def parse_kwargs(kwargs_list):
     """Given an iterable of keyward-value strings of the format "keyword=value"
     parse them into a dict and return it.
@@ -83,8 +87,7 @@ def parse_args():
     general_group.add_argument(
         '-v', '--verbose',
         action='store_true',
-        help='Shortcut to --log-level INFO. If you need even more '
-             'verbosity, set --log-level DEBUG'
+        help='Shortcut to --log-level DEBUG'
     )
     parser.add_argument(
         '--log-level',
@@ -318,12 +321,17 @@ def generateRegexpStatement(keyword, value):
 def main():
     args = parse_args()
 
+
     # Set up logging
     if args.verbose:
-        log_level = 'INFO'
+        log_level = 'DEBUG'
     if args.log_level:
         log_level = args.log_level
     logger.setLevel(log_level)
+
+
+    file_logger.debug("argv: %s", " ".join(sys.argv))
+    file_logger.debug("Parsed args: %s", args)
 
     description_parts = []
     results = History.objects.all()
@@ -444,9 +452,11 @@ def main():
     #     results = results.group_by(args.group_by)
 
     # TODO: Only show if verbosity >1 ?
-    print("Executing query:")
-    print(formatSql(str(results.query)))
-    print()
+    logger.info("Executing query:")
+    formatted_query = formatSql(str(results.query))
+    logger.info(formatted_query)
+    file_logger.info(formatted_query)
+    logger.info('')
 
     # This is where the query is actually executed
     df = results.to_dataframe(fieldnames=DEFAULT_HISTORY_TABLE_FIELDNAMES)
@@ -460,15 +470,17 @@ def main():
     else:
         limit_str = ""
     plural = 's' if num_results > 1 else ''
-    print("Found {} result{} in {} seconds{}"
+    logger.info("Found {} result{} in {} seconds{}"
           .format(num_results, plural, timeOfLastQuery(), limit_str))
+    file_logger.info("Found {} result{} in {} seconds"
+                     .format(num_results, plural, timeOfLastQuery()))
     if not df.empty:
-        print("Displaying scripts {}".format(", ".join(description_parts)))
-        print(genHistoryTable(df))
+        logger.info("Displaying scripts {}".format(", ".join(description_parts)))
+        logger.info(genHistoryTable(df))
     else:
-        print("No scripts found {}".format(", ".join(description_parts)))
+        logger.info("No scripts found {}".format(", ".join(description_parts)))
 
-    print()
+    logger.info('')
 
     if args.show_scripts:
         ScriptReport(results, args.interactive).print_report()
@@ -487,9 +499,9 @@ def main():
     if args.interactive and not in_ipython():
         r = results
         logger.debug("Entering interactive mode")
-        print("Results are available as:")
-        print("  * A QuerySet, in the `r` variable.")
-        print("  * As a DataFrame, in the `df` variable.")
+        logger.info("Results are available as:")
+        logger.info("  * A QuerySet, in the `r` variable.")
+        logger.info("  * As a DataFrame, in the `df` variable.")
         IPython.embed(display_banner=False, exit_msg="Hope you had fun!")
         logger.debug("Exited interactive mode")
 
