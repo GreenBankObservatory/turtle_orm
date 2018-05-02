@@ -64,7 +64,7 @@ def parse_args():
         description='General-purpose arguments'
     )
     general_group.add_argument(
-        '--limit',
+        '-L', '--limit',
         type=int,
         default=10,
         help='Limit results to the given number'
@@ -80,6 +80,19 @@ def parse_args():
         action='store_true',
         help='Make searches fuzzier (case insensitive, incomplete matches, etc.). Note that this will probably be a bit slower.'
     )
+    general_group.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Shortcut to --log-level INFO. If you need even more '
+             'verbosity, set --log-level DEBUG'
+    )
+    parser.add_argument(
+        '--log-level',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+        default='ERROR',
+        help="Specify the logging level. Note that "
+             "this will override --verbose, if both "
+             "are present.")
 
     ### Things Group ###
     things_group = parser.add_argument_group(
@@ -305,6 +318,13 @@ def generateRegexpStatement(keyword, value):
 def main():
     args = parse_args()
 
+    # Set up logging
+    if args.verbose:
+        log_level = 'INFO'
+    if args.log_level:
+        log_level = args.log_level
+    logger.setLevel(log_level)
+
     description_parts = []
     results = History.objects.all()
     if args.projects:
@@ -434,13 +454,14 @@ def main():
     num_results = len(df)
     if args.limit != 0 and args.limit <= num_results:
         limit_str = (
-            ". Results limited to {}; for full results re-run with --limit 0"
+            " due to limit of {}; for full results re-run with --limit 0"
             .format(num_results)
         )
     else:
         limit_str = ""
-    print("Found {} results in {} seconds{}"
-          .format(num_results, timeOfLastQuery(), limit_str))
+    plural = 's' if num_results > 1 else ''
+    print("Found {} result{} in {} seconds{}"
+          .format(num_results, plural, timeOfLastQuery(), limit_str))
     if not df.empty:
         print("Displaying scripts {}".format(", ".join(description_parts)))
         print(genHistoryTable(df))
@@ -476,6 +497,8 @@ def main():
 if __name__ == '__main__':
     main()
 
+# TODO: Show defaults in help
+# TODO: Verbosity option
 # TODO: Fuzzy option. Would do things like search for names using icontains
 # TODO: Handle &= operator for queries. Some sort of option will be needed
 # TODO: Flesh out logging
