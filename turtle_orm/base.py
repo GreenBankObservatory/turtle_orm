@@ -139,10 +139,15 @@ LOGGING = {
         },
     },
     'loggers': {
-        'turtlecli': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
+        'turtlecli.cli_file': {
+            'handlers': ['file'],
+            'level': 'DEBUG',
             'propagate': True
+        },
+        'turtlecli.cli_user': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False
         }
     },
 }
