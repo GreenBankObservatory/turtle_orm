@@ -42,7 +42,6 @@ file_logger = logging.getLogger('{}_file'.format(__name__))
 
 logger = logging.getLogger('{}_user'.format(__name__))
 
-print(logger.name)
 def parse_kwargs(kwargs_list):
     """Given an iterable of keyward-value strings of the format "keyword=value"
     parse them into a dict and return it.
