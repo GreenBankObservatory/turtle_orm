@@ -91,7 +91,7 @@ def parse_args():
     parser.add_argument(
         '--log-level',
         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-        default='ERROR',
+        default='INFO',
         help="Specify the logging level. Note that "
              "this will override --verbose, if both "
              "are present.")
