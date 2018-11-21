@@ -1,30 +1,41 @@
 #!/bin/bash
 
+set -e
+
 script_dir="$(dirname "$(readlink -f "$0")")"
 
 die() {
-    echo "$@" >&2
+    echo "FATAL: $* Please contact SDD and report this!" >&2
     exit 1
+}
+
+get_rhel_version() {
+    lsb_release -i -r | grep Release | awk '{print $2}' | awk -F . '{print $1}'
 }
 
 cd "$script_dir/.." || die "Could not cd to repo root"
 
-if [ ! -e "./env" ]; then
-    die "You must create a symlink named 'env' that points to your virtual environment!"
+# If RHEL7...
+if [ "$(get_rhel_version)" == "7" ]; then
+    source "$script_dir/../rhel7-env/bin/activate" || die "Could not activate virtual environment"
+elif [ "$(get_rhel_version)" == "6" ]; then
+    source "$script_dir/../rhel6-env/bin/activate" || die "Could not activate virtual environment"
+    export LD_LIBRARY_PATH=/users/gbors/python3.5/lib:$LD_LIBRARY_PATH
+    export LDFLAGS="-L/users/gbors/python3.5/lib -lrt"
+else
+    die "Unknown RHEL version!"
 fi
 
-source "$script_dir/../env/bin/activate" || die "Could not activate virtual environment"
-
 export DJANGO_SETTINGS_MODULE=turtle_orm.settings
-export LD_LIBRARY_PATH=/users/gbors/python3.5/lib:$LD_LIBRARY_PATH
-export LDFLAGS="-L/users/gbors/python3.5/lib -lrt"
 
+# Assume that if aren't in an SSH tunnel then we aren't on a suitable host for querying
 if [ -z "$SSH_CONNECTION" ]; then
     echo "WARNING: This will be very slow on your workstation! Consider ssh'ing to a data processing machine." >&2
     echo "Continue? [y/n] "
     read -r response
     if [ "${response,,}" != "y" ]; then
-        die "Well alright then!"
+        echo "Well alright then! (To avoid this in the future, run: SSH_CONNECTION=FOO turtlecli $*" >&2
+        exit 2
     fi
 fi
 python -m turtlecli "$@"

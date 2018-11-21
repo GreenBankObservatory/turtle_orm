@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class Observer(models.Model):
     id = models.BigAutoField(primary_key=True)
-    name = models.CharField(max_length=96)
+    name = models.CharField(max_length=96, help_text="Full name")
 
     class Meta:
         managed = False
@@ -30,7 +30,7 @@ class Observer(models.Model):
 
 class Operator(models.Model):
     id = models.BigAutoField(primary_key=True)
-    name = models.CharField(max_length=96)
+    name = models.CharField(max_length=96, help_text="Full name")
 
     class Meta:
         managed = False
@@ -43,14 +43,35 @@ class Operator(models.Model):
 class History(models.Model):
     id = models.BigAutoField(primary_key=True)
     obsprocedure = models.ForeignKey(
-        "ObsProcedure", on_delete="PROTECT", verbose_name="Procedure"
+        "ObsProcedure",
+        on_delete="PROTECT",
+        verbose_name="Procedure",
+        help_text="ObsProcedure object being executed",
     )
-    observer = models.ForeignKey("Observer", on_delete="PROTECT")
-    operator = models.ForeignKey("Operator", on_delete="PROTECT")
-    datetime = models.DateTimeField()
-    version = models.CharField(max_length=16)
-    executed_script = models.TextField()
-    executed_state = models.CharField(max_length=14)
+    observer = models.ForeignKey(
+        "Observer",
+        on_delete="PROTECT",
+        help_text="Observer in charge of script execution",
+    )
+    operator = models.ForeignKey(
+        "Operator",
+        on_delete="PROTECT",
+        help_text="Operator in charge of script execution",
+    )
+    datetime = models.DateTimeField(help_text="Date of script execution")
+    version = models.CharField(max_length=16, help_text="M&C Software Version")
+    executed_script = models.TextField(
+        help_text="The full contents of the executed observing script"
+    )
+    executed_state = models.CharField(
+        max_length=14,
+        choices=(
+            ("Aborted", "obs_aborted"),
+            ("Completed", "obs_completed"),
+            ("In Progress", "obs_in_progess"),
+        ),
+        help_text="State of the script execution",
+    )
     log = models.TextField()
 
     objects = HistoryManager()
@@ -90,15 +111,32 @@ class ObsProjectRef(models.Model):
 
 class ObsProcedure(models.Model):
     id = models.BigAutoField(primary_key=True)
-    name = models.CharField(max_length=96)
-    session = models.CharField(max_length=16)
-    script = models.TextField()
+    name = models.CharField(max_length=96, help_text="Name of the observation script")
+    session = models.CharField(max_length=16, help_text="Session ID")
+    script = models.TextField(help_text="Observation script contents")
     obsprojectref = models.ForeignKey("ObsProjectRef", on_delete="PROTECT")
     operator = models.ForeignKey("Operator", on_delete="PROTECT")
     observer = models.ForeignKey("Observer", on_delete="PROTECT")
-    state = models.CharField(max_length=13)
-    status = models.CharField(max_length=7)
-    last_modified = models.DateTimeField()
+    state = models.CharField(
+        max_length=13,
+        choices=(
+            ("Not Completed", "not_completed"),
+            ("Completed", "completed"),
+            ("Saved", "saved"),
+        ),
+    )
+    status = models.CharField(
+        max_length=7,
+        choices=(
+            ("Blank", ""),
+            ("Illicit", "illicit"),
+            ("Unknown", "unknown"),
+            ("Valid", "valid"),
+        ),
+    )
+    last_modified = models.DateTimeField(
+        help_text="Date on which this script was last saved"
+    )
 
     class Meta:
         managed = False
@@ -110,7 +148,7 @@ class ObsProcedure(models.Model):
         )
 
     def full_name(self):
-        escaped_name = self.name.replace("/", "\/")
+        escaped_name = self.name.replace("/", r"\/")
         return "{}/{}".format(self.obsprojectref.name, escaped_name)
 
 

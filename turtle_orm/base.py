@@ -114,12 +114,23 @@ LOGGING = {
         },
         "simple": {"format": "%(levelname)s %(message)s"},
         "super_simple": {"format": "%(message)s"},
+        "sql_formatter": {"()": "turtlecli.utils.DjangoSqlFormatter"},
     },
+    # 'filters': {
+    #     'history_sql_filter': {
+    #         "()": 'turtlecli.utils.DjangoSqlFilter'
+    #     }
+    # },
     "handlers": {
         "console": {
             "level": "DEBUG",
             "class": "logging.StreamHandler",
             "formatter": "super_simple",
+        },
+        "console_sql": {
+            "level": "DEBUG",
+            "class": "logging.StreamHandler",
+            "formatter": "sql_formatter",
         },
         "file": {
             "level": "DEBUG",
@@ -139,6 +150,11 @@ LOGGING = {
         "turtlecli.cli_user": {
             "handlers": ["console"],
             "level": "INFO",
+            "propagate": False,
+        },
+        "django.db.backends": {
+            "level": "DEBUG",
+            "handlers": ["console_sql"],
             "propagate": False,
         },
     },

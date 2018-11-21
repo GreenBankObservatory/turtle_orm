@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_HISTORY_TABLE_HEADERS = (
     "Project Name",
     "Script Name",
+    "Session ID",
     # TODO: Verify that this is indeed EST
     # TODO: DST??
     "Executed (EST)",
@@ -27,6 +28,7 @@ DEFAULT_HISTORY_TABLE_HEADERS = (
 DEFAULT_HISTORY_TABLE_FIELDNAMES = (
     "obsprocedure__obsprojectref__name",
     "obsprocedure__name",
+    "obsprocedure__obsprojectref__session",
     "datetime",
     "observer__name",
     "operator__name",
@@ -109,3 +111,13 @@ def formatSql(sql, indent=False):
 
 def timeOfLastQuery():
     return connection.queries[-1]["time"]
+
+
+class DjangoSqlFormatter(logging.Formatter):
+    def format(self, record):
+        return "\n{}".format(formatSql(record.args[1]))
+
+
+# class DjangoSqlFilter(logging.Filter):
+#     def filter(self, record):
+#         return "History" in record.args[1]
