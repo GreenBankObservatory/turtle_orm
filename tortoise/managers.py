@@ -18,7 +18,6 @@ class HistoryManager(DataFrameManager):
         if end:
             results &= self.filter(datetime__lte=end)
         return results
-            
 
     def filterByTime(self, dt, buffer=15):
         """Given a datetime, return all nearby objects
@@ -27,9 +26,10 @@ class HistoryManager(DataFrameManager):
         that is searched (+- the given number of minute)"""
 
         buffer_delta = timezone.timedelta(minutes=buffer)
-        return self.filter(datetime__gte=dt - buffer_delta,
-                           datetime__lte=dt + buffer_delta)
+        return self.filter(
+            datetime__gte=dt - buffer_delta, datetime__lte=dt + buffer_delta
+        )
 
     # def filterByTimeStr(self, dt_str, *args, **kwargs):
-        
+
     #     return self.filterByTime(dt)

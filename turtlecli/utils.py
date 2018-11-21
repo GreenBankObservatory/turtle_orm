@@ -14,27 +14,29 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_HISTORY_TABLE_HEADERS = (
-    'Project Name',
-    'Script Name',
+    "Project Name",
+    "Script Name",
     # TODO: Verify that this is indeed EST
     # TODO: DST??
-    'Executed (EST)',
-    'Observer',
-    'Operator',
-    'State'
+    "Executed (EST)",
+    "Observer",
+    "Operator",
+    "State",
 )
 
 DEFAULT_HISTORY_TABLE_FIELDNAMES = (
-    'obsprocedure__obsprojectref__name',
-    'obsprocedure__name',
-    'datetime',
-    'observer__name',
-    'operator__name',
-    'executed_state'
+    "obsprocedure__obsprojectref__name",
+    "obsprocedure__name",
+    "datetime",
+    "observer__name",
+    "operator__name",
+    "executed_state",
 )
+
 
 def formatTable(table, headers):
     return tabulate(table, headers=headers)
+
 
 def genHistoryTable(history_df, headers=None):
     if not headers:
@@ -45,8 +47,10 @@ def genHistoryTable(history_df, headers=None):
 
     return formatTable(history_df, headers)
 
+
 def order_type(foo):
     return foo
+
 
 def in_ipython():
     """Determine whether this script is being run via IPython; return bool"""
@@ -61,17 +65,18 @@ def in_ipython():
         return True
 
 
-# From: https://chezsoi.org/lucas/blog/colored-diff-output-with-python.html 
+# From: https://chezsoi.org/lucas/blog/colored-diff-output-with-python.html
 def color_diff(diff):
     for line in diff:
-        if line.startswith('+'):
+        if line.startswith("+"):
             yield Fore.GREEN + line + Fore.RESET
-        elif line.startswith('-'):
+        elif line.startswith("-"):
             yield Fore.RED + line + Fore.RESET
-        elif line.startswith('^'):
+        elif line.startswith("^"):
             yield Fore.BLUE + line + Fore.RESET
         else:
             yield line
+
 
 def gen2(l):
     """Given an iterable, generate tuples of every two elements
@@ -81,7 +86,7 @@ def gen2(l):
     """
 
     for i in range(len(l) - 1):
-        yield (l[i], l[i+1])
+        yield (l[i], l[i + 1])
 
 
 def formatSql(sql, indent=False):
@@ -89,7 +94,7 @@ def formatSql(sql, indent=False):
 
     Optionally indent every line of the SQL before returning it."""
 
-    formatted = sqlparse.format(sql, reindent=True, keyword_case='upper')
+    formatted = sqlparse.format(sql, reindent=True, keyword_case="upper")
     if indent:
         lines = []
         for line in formatted.split("\n"):
@@ -103,5 +108,4 @@ def formatSql(sql, indent=False):
 
 
 def timeOfLastQuery():
-    return connection.queries[-1]['time']
-        
+    return connection.queries[-1]["time"]

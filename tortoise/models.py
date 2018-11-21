@@ -22,7 +22,7 @@ class Observer(models.Model):
 
     class Meta:
         managed = False
-        db_table = 'Observer'
+        db_table = "Observer"
 
     def __str__(self):
         return "Observer {}".format(self.name)
@@ -34,7 +34,7 @@ class Operator(models.Model):
 
     class Meta:
         managed = False
-        db_table = 'Operator'
+        db_table = "Operator"
 
     def __str__(self):
         return "Operator {}".format(self.name)
@@ -42,9 +42,11 @@ class Operator(models.Model):
 
 class History(models.Model):
     id = models.BigAutoField(primary_key=True)
-    obsprocedure = models.ForeignKey('ObsProcedure', on_delete='PROTECT', verbose_name='Procedure')
-    observer = models.ForeignKey('Observer', on_delete='PROTECT')
-    operator = models.ForeignKey('Operator', on_delete='PROTECT')
+    obsprocedure = models.ForeignKey(
+        "ObsProcedure", on_delete="PROTECT", verbose_name="Procedure"
+    )
+    observer = models.ForeignKey("Observer", on_delete="PROTECT")
+    operator = models.ForeignKey("Operator", on_delete="PROTECT")
     datetime = models.DateTimeField()
     version = models.CharField(max_length=16)
     executed_script = models.TextField()
@@ -55,22 +57,23 @@ class History(models.Model):
 
     class Meta:
         managed = False
-        db_table = 'History'
+        db_table = "History"
 
     def __str__(self):
-        return ("History {} at {}"
-                .format(self.id, self.datetime))
+        return "History {} at {}".format(self.id, self.datetime)
 
 
 class ObsProjectRef(models.Model):
     id = models.BigAutoField(primary_key=True)
     name = models.CharField(unique=True, max_length=96)
-    primary_observer = models.ForeignKey('Observer', on_delete='PROTECT', db_column='primary_observer')
+    primary_observer = models.ForeignKey(
+        "Observer", on_delete="PROTECT", db_column="primary_observer"
+    )
     session = models.CharField(max_length=16)
 
     class Meta:
         managed = False
-        db_table = 'ObsProjectRef'
+        db_table = "ObsProjectRef"
 
     def __str__(self):
         # TODO: Better way to handle this (without changing the DB)?
@@ -80,8 +83,9 @@ class ObsProjectRef(models.Model):
             logger.warning("No Observer exists with ID %s", self.primary_observer_id)
             observer = None
 
-        return ("ObsProjectRef name: {}, observer: {}, session: {}"
-                .format(self.name, observer, self.session))
+        return "ObsProjectRef name: {}, observer: {}, session: {}".format(
+            self.name, observer, self.session
+        )
 
 
 class ObsProcedure(models.Model):
@@ -89,20 +93,21 @@ class ObsProcedure(models.Model):
     name = models.CharField(max_length=96)
     session = models.CharField(max_length=16)
     script = models.TextField()
-    obsprojectref = models.ForeignKey('ObsProjectRef', on_delete='PROTECT')
-    operator = models.ForeignKey('Operator', on_delete='PROTECT')
-    observer = models.ForeignKey('Observer', on_delete='PROTECT')
+    obsprojectref = models.ForeignKey("ObsProjectRef", on_delete="PROTECT")
+    operator = models.ForeignKey("Operator", on_delete="PROTECT")
+    observer = models.ForeignKey("Observer", on_delete="PROTECT")
     state = models.CharField(max_length=13)
     status = models.CharField(max_length=7)
     last_modified = models.DateTimeField()
 
     class Meta:
         managed = False
-        db_table = 'ObsProcedure'
+        db_table = "ObsProcedure"
 
     def __str__(self):
-        return ("ObsProcedure name: {}, session: {}, state: {}, status: {}"
-                .format(self.name, self.session, self.state, self.status))
+        return "ObsProcedure name: {}, session: {}, state: {}, status: {}".format(
+            self.name, self.session, self.state, self.status
+        )
 
     def full_name(self):
         escaped_name = self.name.replace("/", "\/")
@@ -111,20 +116,20 @@ class ObsProcedure(models.Model):
 
 class Queue(models.Model):
     id = models.BigAutoField(primary_key=True)
-    obsprocedure = models.ForeignKey('ObsProcedure', on_delete='PROTECT')
+    obsprocedure = models.ForeignKey("ObsProcedure", on_delete="PROTECT")
     # prev = models.ForeignKey('Queue', on_delete='PROTECT')
     # next = models.ForeignKey('Queue', on_delete='PROTECT')
     name = models.CharField(max_length=96)
     script = models.TextField()
-    project = models.ForeignKey('ObsProjectRef', on_delete='PROTECT')
+    project = models.ForeignKey("ObsProjectRef", on_delete="PROTECT")
     session = models.CharField(max_length=16)
-    observer = models.ForeignKey('Observer', on_delete='PROTECT')
-    operator = models.ForeignKey('Operator', on_delete='PROTECT')
+    observer = models.ForeignKey("Observer", on_delete="PROTECT")
+    operator = models.ForeignKey("Operator", on_delete="PROTECT")
     time_submitted = models.DateTimeField()
 
     class Meta:
         managed = False
-        db_table = 'Queue'
+        db_table = "Queue"
 
 
 class ConfigScript(models.Model):
@@ -134,4 +139,4 @@ class ConfigScript(models.Model):
 
     class Meta:
         managed = False
-        db_table = 'configscript'
+        db_table = "configscript"
