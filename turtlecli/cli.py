@@ -12,6 +12,7 @@ import IPython
 
 from django.utils import timezone
 from django.db.models import Q
+from django.db import connections
 
 from tortoise.models import History
 
@@ -78,10 +79,15 @@ def parse_args():
     general_group.add_argument(
         "--fuzzy",
         action="store_true",
-        help="Make searches fuzzier (case insensitive, incomplete matches, etc.). Note that this will probably be a bit slower.",
+        help="Make searches fuzzier (case insensitive, incomplete matches, "
+        "etc.). Note that this will probably be a bit slower.",
     )
     general_group.add_argument(
-        "-v", "--verbose", action="store_true", help="Shortcut to --log-level DEBUG"
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Shortcut to --log-level DEBUG. Note: this will display SQL "
+        "queries made during the initial query",
     )
     parser.add_argument(
         "--log-level",
@@ -154,7 +160,9 @@ def parse_args():
         "--start",
         metavar="DATETIME",
         type=dp.parse,
-        help="Limit to scripts executed after this time",
+        help="Limit to scripts executed after this time (note: any reasonable "
+        "datetime format will work here). This time is INCLUSIVE. "
+        "It DOES NOT respect --buffer!",
     )
     time_group.add_argument(
         "-b",
@@ -162,20 +170,29 @@ def parse_args():
         "--end",
         metavar="DATETIME",
         type=dp.parse,
-        help="Limit to scripts executed before this time",
+        help="Limit to scripts executed before this time "
+        "(note: any reasonable datetime format will work here). This time is "
+        "INCLUSIVE. It DOES NOT respect --buffer!",
     )
 
     # TODO: Allow multiple options here
     time_group.add_argument(
-        "-t", "--time", metavar="DATETIME", type=dp.parse, help="The time of the thing"
+        "-t",
+        "--time",
+        metavar="DATETIME",
+        type=dp.parse,
+        help="Script execution time (note: any reasonable datetime "
+        "format will work here). This works in conjunction with --buffer to "
+        "find all scripts executed near the given time",
     )
     time_group.add_argument(
         "-B",
         "--buffer",
         type=float,
         default=0.25,
-        help="Designates the size of the window that projects "
-        "will be searched for within. Units are determined by --units. "
+        help="Designates the size of the time window that projects "
+        "will be searched for within. For an exact time, use 0 here. "
+        "Units are determined by --units. "
         "Note that the default will only be reasonable if the default "
         "unit is used.",
     )
@@ -204,9 +221,14 @@ def parse_args():
         default="datetime",
         # These are simply what I consider a reasonable set of things to filter by
         choices=["id", "obsprocedure", "observer", "operator", "datetime"],
+        help="Field to results by",
     )
     sorting_group.add_argument(
-        "-d", "--direction", default="descending", choices=["ascending", "descending"]
+        "-d",
+        "--direction",
+        default="descending",
+        choices=["ascending", "descending"],
+        help="Direction to sort results",
     )
 
     ### Output Group ###
@@ -231,6 +253,13 @@ def parse_args():
         "--show-scripts",
         action="store_true",
         help="Show the contents of the executed script for each result",
+    )
+    output_group.add_argument(
+        "--show-sql",
+        action="store_true",
+        help="Display every SQL query that is executed during the script. "
+        "NOTE: This is primarily intended for use in --interactive mode; "
+        "for standard operations simply use --verbose",
     )
 
     ### Advanced Group ###
@@ -325,12 +354,15 @@ def main():
     # Set up logging
     if args.verbose:
         log_level = "DEBUG"
-    if args.log_level:
+    elif args.log_level:
         log_level = args.log_level
+    # Set our logger level
     logger.setLevel(log_level)
+    # Set Django's DB logger level, too
+    if args.show_sql:
+        logging.getLogger("django.db.backends").setLevel("DEBUG")
 
-    file_logger.debug("argv: %s", " ".join(sys.argv))
-    file_logger.debug("Parsed args: %s", args)
+    file_logger.info("argv: %s", " ".join(sys.argv))
 
     description_parts = []
     results = History.objects.all()
@@ -358,7 +390,13 @@ def main():
     if args.operators:
         plural = "s" if args.operators and len(args.operators) > 1 else ""
         description_parts.append("with operator{} {}".format(plural, args.operators))
-        results &= History.objects.filter(operator__name__in=args.operators)
+        if args.fuzzy:
+            query = Q()
+            for operator in args.operators:
+                query = Q(operator__name__icontains=operator)
+            results &= History.objects.filter(query)
+        else:
+            results &= History.objects.filter(operator__name__in=args.operators)
 
     if args.state:
         # Argument choices are shortened forms of the possible field values
@@ -452,37 +490,42 @@ def main():
     # if args.group_by:
     #     results = results.group_by(args.group_by)
 
-    # TODO: Only show if verbosity >1 ?
-    logger.info("Executing query:")
-    formatted_query = formatSql(str(results.query))
-    logger.info(formatted_query)
-    file_logger.info(formatted_query)
-    logger.info("")
-
     # This is where the query is actually executed
     df = results.to_dataframe(fieldnames=DEFAULT_HISTORY_TABLE_FIELDNAMES)
 
+    # First 4 queries are not relevant to us
+    queries = connections["default"].queries[4:]
+    if logger.level == logging.DEBUG and not args.show_sql:
+        logger.debug("Executed queries:")
+        for query in queries:
+            logger.debug(formatSql(query["sql"]))
+
+    # Sum up query time from all relevant queries
+    query_time = sum(float(query["time"]) for query in queries)
+
     num_results = len(df)
     if args.limit != 0 and args.limit <= num_results:
-        limit_str = " due to limit of {}; for full results re-run with --limit 0".format(
+        limit_str = " due to `limit` of {}; for full results re-run with --limit 0".format(
             num_results
         )
     else:
         limit_str = ""
     plural = "s" if num_results > 1 else ""
     logger.info(
-        "Found {} result{} in {} seconds{}".format(
-            num_results, plural, timeOfLastQuery(), limit_str
+        "Found {} result{} in {:.3f} seconds{}".format(
+            num_results, plural, query_time, limit_str
         )
     )
     file_logger.info(
-        "Found {} result{} in {} seconds".format(num_results, plural, timeOfLastQuery())
+        "Found {} result{} in {:.3f} seconds".format(num_results, plural, query_time)
     )
     if not df.empty:
         logger.info("Displaying scripts {}".format(", ".join(description_parts)))
         logger.info(genHistoryTable(df))
     else:
         logger.info("No scripts found {}".format(", ".join(description_parts)))
+        if not args.fuzzy:
+            logger.info("Try again with --fuzzy to perform substring searches")
 
     logger.info("")
 
@@ -503,11 +546,29 @@ def main():
     # However, don't bother trying if we are already being run via IPython,
     # because it won't work
     if args.interactive and not in_ipython():
+        from tortoise.models import ObsProcedure, Observer, Operator, ObsProjectRef
+
+        logger.info("")
         r = results
-        logger.debug("Entering interactive mode")
+        logger.info("Entering interactive mode")
         logger.info("Results are available as:")
-        logger.info("  * A QuerySet, in the `r` variable.")
-        logger.info("  * As a DataFrame, in the `df` variable.")
+        logger.info(
+            "  * A Django QuerySet (see: "
+            "https://docs.djangoproject.com/en/2.0/ref/models/querysets), "
+            "in the `r` variable. This contains History objects; available fields are:"
+        )
+        field_str = "\n".join(
+            [
+                "    * {}: {}".format(field.name, field.help_text)
+                for field in History._meta.fields
+            ]
+        )
+        logger.info(field_str)
+        logger.info(
+            "  * As a Pandas DataFrame (see: "
+            "https://pandas.pydata.org/pandas-docs/stable/api.html#dataframe) "
+            "in the `df` variable."
+        )
         IPython.embed(display_banner=False, exit_msg="Hope you had fun!")
         logger.debug("Exited interactive mode")
 
@@ -516,8 +577,6 @@ if __name__ == "__main__":
     main()
 
 # TODO: Show defaults in help
-# TODO: Verbosity option
-# TODO: Fuzzy option. Would do things like search for names using icontains
 # TODO: Handle &= operator for queries. Some sort of option will be needed
 # TODO: Flesh out logging
 # TODO: Finish refactoring of codebase
