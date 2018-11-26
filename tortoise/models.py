@@ -72,7 +72,7 @@ class History(models.Model):
         ),
         help_text="State of the script execution",
     )
-    log = models.TextField()
+    log = models.TextField(help_text="The execution log for the script")
 
     objects = HistoryManager()
 
