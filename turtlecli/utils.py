@@ -1,4 +1,5 @@
 import logging
+import subprocess
 
 from django.db import connection
 
@@ -123,3 +124,8 @@ class DjangoSqlFormatter(logging.Formatter):
 # class DjangoSqlFilter(logging.Filter):
 #     def filter(self, record):
 #         return "History" in record.args[1]
+
+
+def get_console_width():
+    _, console_width_str = subprocess.check_output(["stty", "size"]).decode().split()
+    return int(console_width_str)

@@ -1,11 +1,10 @@
 import difflib
 import logging
 import os
-import subprocess
 
 from colorama import Fore
 
-from turtlecli.utils import color_diff, gen2
+from turtlecli.utils import color_diff, gen2, get_console_width
 
 
 logger = logging.getLogger(__name__)
@@ -23,12 +22,8 @@ class TurtleReport:
         return "{}{}{}".format(self.text_color, text, Fore.RESET)
 
     def print_report_msg(self, text, raw=False):
-
-        _, console_width_str = (
-            subprocess.check_output(["stty", "size"]).decode().split()
-        )
         try:
-            console_width = int(console_width_str)
+            console_width = get_console_width()
         except ValueError:
             console_width = 80
             logger.warning(

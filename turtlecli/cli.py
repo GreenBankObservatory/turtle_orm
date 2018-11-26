@@ -32,6 +32,7 @@ from turtlecli.utils import (
     formatSql,
     DEFAULT_HISTORY_TABLE_FIELDNAMES,
     timeOfLastQuery,
+    get_console_width,
 )
 
 from turtlecli.reports import DiffReport, LogReport, ScriptReport
@@ -59,9 +60,14 @@ def parse_kwargs(kwargs_list):
 
 
 def parse_args():
+    console_width = get_console_width()
+    width = console_width * 0.8 if console_width > 80 / 0.8 else 80
     parser = argparse.ArgumentParser(
         prog="turtlecli",
         description="A program for easily querying the Turtle database",
+        formatter_class=lambda prog: argparse.ArgumentDefaultsHelpFormatter(
+            prog, width=width
+        ),
     )
 
     ### General Group ###
@@ -87,7 +93,7 @@ def parse_args():
         "-v",
         "--verbose",
         action="store_true",
-        help="Shortcut to --log-level DEBUG. Note: this will display SQL "
+        help="Make output more verbose. Note: this will display SQL "
         "queries made during the initial query",
     )
     parser.add_argument(
@@ -101,8 +107,7 @@ def parse_args():
 
     ### Things Group ###
     things_group = parser.add_argument_group(
-        title='"Things"',
-        description='Arguments that are in the domain of "things" to filter by',
+        title="Entities", description="Arguments that relate to filtering by entity"
     )
     things_group.add_argument(
         "-p",
