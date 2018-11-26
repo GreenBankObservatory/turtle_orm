@@ -483,6 +483,8 @@ def main():
         )
         results = results.order_by(field)
 
+    all_results = results
+    all_results_count = all_results.count()
     # This must occur after ordering!
     # Don't limit if limit is set to 0
     if results.exists() and args.limit != 0:
@@ -494,8 +496,10 @@ def main():
     # This is where the query is actually executed
     df = results.to_dataframe(fieldnames=DEFAULT_HISTORY_TABLE_FIELDNAMES)
 
-    # First 4 queries are not relevant to us
-    queries = connections["default"].queries[4:]
+    # First 2 queries are not relevant to us
+    queries = connections["default"].queries[2:]
+    # We only show this if we are logging DEBUG messages, _and_ we are not
+    # already logging all SQL queries (that would be redundant)
     if logger.level == logging.DEBUG and not args.show_sql:
         logger.debug("Executed queries:")
         for query in queries:
@@ -506,8 +510,8 @@ def main():
 
     num_results = len(df)
     if args.limit != 0 and args.limit <= num_results:
-        limit_str = " due to `limit` of {}; for full results re-run with --limit 0".format(
-            num_results
+        limit_str = " due to `limit` of {}; for all {} results re-run with --limit 0".format(
+            num_results, all_results_count
         )
     else:
         limit_str = ""
@@ -551,12 +555,14 @@ def main():
 
         logger.info("")
         r = results
+        ar = all_results
         logger.info("Entering interactive mode")
         logger.info("Results are available as:")
         logger.info(
             "  * A Django QuerySet (see: "
             "https://docs.djangoproject.com/en/2.0/ref/models/querysets), "
-            "in the `r` variable. This contains History objects; available fields are:"
+            "in the `r` (limited results) and `ar` (all results) variables. \n"
+            "    This contains History objects; available fields are:"
         )
         field_str = "\n".join(
             [
@@ -571,7 +577,7 @@ def main():
             "in the `df` variable."
         )
         IPython.embed(display_banner=False, exit_msg="Hope you had fun!")
-        logger.debug("Exited interactive mode")
+        logger.debug("Exiting interactive mode")
 
 
 if __name__ == "__main__":
