@@ -5,6 +5,7 @@ import inspect
 import logging
 import os
 import pkgutil
+import shlex
 import sys
 
 import dateutil.parser as dp
@@ -362,7 +363,7 @@ def main():
     if args.show_sql:
         logging.getLogger("django.db.backends").setLevel("DEBUG")
 
-    file_logger.info("argv: %s", " ".join(sys.argv))
+    file_logger.info("argv: %s", " ".join([shlex.quote(arg) for arg in sys.argv]))
 
     description_parts = []
     results = History.objects.all()
@@ -521,7 +522,7 @@ def main():
     )
     if not df.empty:
         logger.info("Displaying scripts {}".format(", ".join(description_parts)))
-        logger.info(genHistoryTable(df))
+        logger.info(genHistoryTable(df, verbose=args.verbose))
     else:
         logger.info("No scripts found {}".format(", ".join(description_parts)))
         if not args.fuzzy:
