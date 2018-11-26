@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_HISTORY_TABLE_HEADERS = (
     "Project Name",
     "Script Name",
-    "Session ID",
     # TODO: Verify that this is indeed EST
     # TODO: DST??
     "Executed (EST)",
@@ -28,7 +27,6 @@ DEFAULT_HISTORY_TABLE_HEADERS = (
 DEFAULT_HISTORY_TABLE_FIELDNAMES = (
     "obsprocedure__obsprojectref__name",
     "obsprocedure__name",
-    "obsprocedure__obsprojectref__session",
     "datetime",
     "observer__name",
     "operator__name",
@@ -40,13 +38,14 @@ def formatTable(table, headers):
     return tabulate(table, headers=headers)
 
 
-def genHistoryTable(history_df, headers=None):
+def genHistoryTable(history_df, headers=None, verbose=False):
     if not headers:
         headers = DEFAULT_HISTORY_TABLE_HEADERS
 
     if len(headers) != len(history_df.columns):
         raise ValueError("Number of headers must be equal to number of columns!")
-
+    if verbose:
+        headers = [f"{header}\n({field})" for header, field in zip(headers, history_df.columns)]
     return formatTable(history_df, headers)
 
 
