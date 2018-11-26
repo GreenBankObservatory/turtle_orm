@@ -358,7 +358,9 @@ def parse_args():
         parser.error("--buffer value must be greater than 0")
     args.buffer = timezone.timedelta(**{args.unit: args.buffer})
 
-    if args.output and not (args.save_scripts or args.save_logs):
+    if args.output != parser.get_default("output") and not (
+        args.save_scripts or args.save_logs
+    ):
         parser.error("--output is meaningless without --save-scripts or --save-logs")
 
     return args
