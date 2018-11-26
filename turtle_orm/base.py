@@ -145,13 +145,9 @@ LOGGING = {
         "turtlecli.cli_file": {
             "handlers": ["file"],
             "level": "DEBUG",
-            "propagate": True,
-        },
-        "turtlecli.cli_user": {
-            "handlers": ["console"],
-            "level": "INFO",
             "propagate": False,
         },
+        "turtlecli": {"handlers": ["console"], "level": "INFO", "propagate": False},
         "django.db.backends": {
             "level": "INFO",
             "handlers": ["console_sql"],

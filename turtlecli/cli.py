@@ -237,23 +237,39 @@ def parse_args():
         title="Output", description="Arguments specify output options"
     )
     output_group.add_argument(
+        "--output",
+        default=".",
+        help="Specify the path into which all output files will be written."
+        "If the path does not exist, an attempt will be made to create it.",
+    )
+    output_group.add_argument(
         # TODO: --diff is deprecated
         "--show-diffs",
         "--diff",
         action="store_true",
-        help="Show the differences between the script for each result",
+        help="Show the differences between the scripts for each result",
     )
     output_group.add_argument(
         "--show-logs",
         "--logs",
         # TODO: --logs is deprecated
         action="store_true",
-        help="Show the logs for each result",
+        help="Show the log for each result",
+    )
+    output_group.add_argument(
+        "--save-logs",
+        action="store_true",
+        help="Save the log for each result to file. Path is relative to --output.",
     )
     output_group.add_argument(
         "--show-scripts",
         action="store_true",
         help="Show the contents of the executed script for each result",
+    )
+    output_group.add_argument(
+        "--save-scripts",
+        action="store_true",
+        help="Save the script for each result to file. Path is relative to --output.",
     )
     output_group.add_argument(
         "--show-sql",
@@ -342,6 +358,9 @@ def parse_args():
         parser.error("--buffer value must be greater than 0")
     args.buffer = timezone.timedelta(**{args.unit: args.buffer})
 
+    if args.output and not (args.save_scripts or args.save_logs):
+        parser.error("--output is meaningless without --save-scripts or --save-logs")
+
     return args
 
 
@@ -357,8 +376,14 @@ def main():
         log_level = "DEBUG"
     elif args.log_level:
         log_level = args.log_level
+
+    if not args.verbose:
+        # If we are not in verbose mode, then we only output simple errors
+        sys.excepthook = excepthook
+
     # Set our logger level
-    logger.setLevel(log_level)
+    logging.getLogger("turtlecli").setLevel(log_level)
+    # logger.setLevel(log_level)
     # Set Django's DB logger level, too
     if args.show_sql:
         logging.getLogger("django.db.backends").setLevel("DEBUG")
@@ -534,8 +559,16 @@ def main():
 
     logger.info("")
 
-    if args.show_scripts:
-        ScriptReport(results, args.interactive).print_report()
+    if args.output:
+        os.makedirs(args.output, exist_ok=True)
+
+    if args.show_scripts or args.save_scripts:
+        report = ScriptReport(results, args.interactive)
+        if args.show_scripts:
+            report.print_report()
+
+        if args.save_scripts:
+            report.save_report(args.output)
 
     if args.show_diffs:
         if set(results.values_list("obsprocedure__name", flat=True)):
@@ -544,8 +577,13 @@ def main():
             )
         DiffReport(results, args.interactive).print_report()
 
-    if args.show_logs:
-        LogReport(results, args.interactive).print_report()
+    if args.show_logs or args.save_logs:
+        report = LogReport(results, args.interactive)
+        if args.show_logs:
+            report.print_report()
+
+        if args.save_logs:
+            report.save_report(args.output)
 
     # If the user has requested an interactive session, enter it now.
     # However, don't bother trying if we are already being run via IPython,
@@ -578,6 +616,11 @@ def main():
         )
         IPython.embed(display_banner=False, exit_msg="Hope you had fun!")
         logger.debug("Exiting interactive mode")
+
+
+def excepthook(type, value, traceback):
+    print(value, file=sys.stderr)
+    sys.exit(1)
 
 
 if __name__ == "__main__":

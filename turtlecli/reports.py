@@ -1,5 +1,6 @@
 import difflib
 import logging
+import os
 import subprocess
 
 from colorama import Fore
@@ -21,7 +22,7 @@ class TurtleReport:
     def colorize(self, text):
         return "{}{}{}".format(self.text_color, text, Fore.RESET)
 
-    def report_msg(self, text, raw=False):
+    def print_report_msg(self, text, raw=False):
 
         _, console_width_str = (
             subprocess.check_output(["stty", "size"]).decode().split()
@@ -43,17 +44,32 @@ class TurtleReport:
             print(self.colorize(text))
             print(self.colorize("-" * console_width))
 
+    def gen_filename(self):
+        raise NotImplementedError("Must be implemented by child class")
+
     def gen_result_header(self):
         raise NotImplementedError("Must be implemented by child class")
 
     def gen_result_report(self):
         raise NotImplementedError("Must be implemented by child class")
 
-    def print_report(self):
-        self.report_msg(self.title)
+    def save_report(self, path):
         for result in self.result_generator:
-            self.report_msg(self.gen_result_header(result))
-            self.report_msg(self.gen_result_report(result), raw=True)
+            full_path = os.path.join(path, self.gen_filename(result))
+            with open(full_path, "w") as file:
+                file.write(self.gen_result_report(result))
+
+            logger.debug(
+                "Saved {result} to {full_path}".format(
+                    result=result, full_path=full_path
+                )
+            )
+
+    def print_report(self):
+        self.print_report_msg(self.title)
+        for result in self.result_generator:
+            self.print_report_msg(self.gen_result_header(result))
+            self.print_report_msg(self.gen_result_report(result))
             if self.interactive:
                 response = input(
                     self.colorize(
@@ -66,6 +82,14 @@ class TurtleReport:
 
 class LogReport(TurtleReport):
     title = "Showing logs for all above results"
+
+    def gen_filename(self, result):
+        return "{project}.{script}.{exec}.{observer}.log.txt".format(
+            observer=result.observer.name,
+            project=result.obsprocedure.obsprojectref.name,
+            script=result.obsprocedure.name,
+            exec=result.datetime,
+        ).replace(" ", "_")
 
     def gen_result_header(self, result):
         return "Logs for script {script}, executed at {exec} by observer {observer}".format(
@@ -80,6 +104,14 @@ class LogReport(TurtleReport):
 
 class ScriptReport(TurtleReport):
     title = "Showing scripts for all above results"
+
+    def gen_filename(self, result):
+        return "{project}.{script}.{exec}.{observer}.script.txt".format(
+            observer=result.observer.name,
+            project=result.obsprocedure.obsprojectref.name,
+            script=result.obsprocedure.name,
+            exec=result.datetime,
+        ).replace(" ", "_")
 
     def gen_result_header(self, result):
         return "Contents of scripts executed at {exec}".format(exec=result.datetime)
