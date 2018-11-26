@@ -45,7 +45,7 @@ def genHistoryTable(history_df, headers=None, verbose=False):
     if len(headers) != len(history_df.columns):
         raise ValueError("Number of headers must be equal to number of columns!")
     if verbose:
-        headers = [f"{header}\n({field})" for header, field in zip(headers, history_df.columns)]
+        headers = ["{}\n({})".format(header, field) for header, field in zip(headers, history_df.columns)]
     return formatTable(history_df, headers)
 
 
