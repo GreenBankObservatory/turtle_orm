@@ -15,6 +15,11 @@ get_rhel_version() {
 
 cd "$script_dir/.." || die "Could not cd to repo root"
 
+if cat ./turtle_orm/settings.py |& grep -q "Permission denied"; then
+    echo "Unable to read settings file; permission denied. Please contact GBT staff to request permission!" >&2
+    exit 2
+fi
+
 # If RHEL7...
 if [ "$(get_rhel_version)" == "7" ]; then
     source "$script_dir/../rhel7-env/bin/activate" || die "Could not activate virtual environment"
