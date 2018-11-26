@@ -561,6 +561,7 @@ def main():
 
     if args.output:
         os.makedirs(args.output, exist_ok=True)
+        logger.debug("Created directory %s", args.output)
 
     if args.show_scripts or args.save_scripts:
         report = ScriptReport(results, args.interactive)

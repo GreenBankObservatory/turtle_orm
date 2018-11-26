@@ -13,18 +13,19 @@ get_rhel_version() {
     lsb_release -i -r | grep Release | awk '{print $2}' | awk -F . '{print $1}'
 }
 
-cd "$script_dir/.." || die "Could not cd to repo root"
+repo_root="$(readlink -f "$script_dir/..")"
 
-if cat ./turtle_orm/settings.py |& grep -q "Permission denied"; then
+
+if cat "$repo_root/turtle_orm/settings.py" |& grep -q "Permission denied"; then
     echo "Unable to read settings file; permission denied. Please contact GBT staff to request permission!" >&2
     exit 2
 fi
 
 # If RHEL7...
 if [ "$(get_rhel_version)" == "7" ]; then
-    source "$script_dir/../rhel7-env/bin/activate" || die "Could not activate virtual environment"
+    source "$repo_root/rhel7-env/bin/activate" || die "Could not activate virtual environment"
 elif [ "$(get_rhel_version)" == "6" ]; then
-    source "$script_dir/../rhel6-env/bin/activate" || die "Could not activate virtual environment"
+    source "$repo_root/rhel6-env/bin/activate" || die "Could not activate virtual environment"
     export LD_LIBRARY_PATH=/users/gbors/python3.5/lib:$LD_LIBRARY_PATH
     export LDFLAGS="-L/users/gbors/python3.5/lib -lrt"
 else
@@ -43,4 +44,5 @@ if [ -z "$SSH_CONNECTION" ]; then
         exit 2
     fi
 fi
-python -m turtlecli "$@"
+
+PYTHONPATH="$repo_root":$PYTHONPATH python -m turtlecli "$@"
