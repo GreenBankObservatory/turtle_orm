@@ -36,6 +36,7 @@ from turtlecli.utils import (
 )
 
 from turtlecli.reports import DiffReport, LogReport, ScriptReport
+from turtlecli.gitify import gitify
 
 
 """Commandline Interface to the Turtle DB"""
@@ -283,6 +284,13 @@ def parse_args():
         "NOTE: This is primarily intended for use in --interactive mode; "
         "for standard operations simply use --verbose",
     )
+    output_group.add_argument(
+        "--export-to-git",
+        action="store_true",
+        help="Export all results to a git repository, with every execution "
+        "forming a commit. Execution date is used as commit date. File name "
+        "is in the format {PROJECT}.{SCRIPTNAME}.py",
+    )
 
     ### Advanced Group ###
     advanced_group = parser.add_argument_group(
@@ -364,9 +372,11 @@ def parse_args():
     args.buffer = timezone.timedelta(**{args.unit: args.buffer})
 
     if args.output != parser.get_default("output") and not (
-        args.save_scripts or args.save_logs
+        args.save_scripts or args.save_logs or args.export_to_git
     ):
-        parser.error("--output is meaningless without --save-scripts or --save-logs")
+        parser.error(
+            "--output is meaningless without --save-scripts, --save-logs, or --export-to-git"
+        )
 
     return args
 
@@ -575,7 +585,7 @@ def main():
         if args.show_scripts:
             report.print_report()
 
-        if args.save_scripts:
+        if args.save_scripts and not args.export_to_git:
             report.save_report(args.output)
 
     if args.show_diffs:
@@ -590,8 +600,11 @@ def main():
         if args.show_logs:
             report.print_report()
 
-        if args.save_logs:
+        if args.save_logs and not args.export_to_git:
             report.save_report(args.output)
+
+    if args.export_to_git:
+        gitify(results, args.output, include_log=args.save_logs)
 
     # If the user has requested an interactive session, enter it now.
     # However, don't bother trying if we are already being run via IPython,
