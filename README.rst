@@ -4,7 +4,7 @@
 Background
 ----------
 
-The Turtle database stores a history of every observation script that has ever been executed, along with their respective operator, observer, project, etc.
+The Turtle database stores a history of every observation script that has ever been executed on the GBT, along with their respective operator, observer, project, etc.
 
 
 Overview
@@ -21,12 +21,11 @@ Overview
 Note that these questions can be partially answered by using a combination of the OpsLog and DSS, but neither of these tools is a direct reflection what actually happened on the system. That is, the Turtle DB represents a third source of truth for answering "what happened?" sorts of questions, but it has been markedly more opaque than the other two.
 
 A few notes:
-
+    - For most use cases, you will want to include either ``--fuzzy`` or ``--regex`` to make the searches a little more thorough
     - Running this from your workstation will probably be very slow, and you will thus be prompted if you attempt to do so. I'd recommend using a machine intended for data processing instead.
     - This is an early draft, and there isn't really any error checking, so certain combinations of arguments might lead to unexpected behavior
     - This script has a read-only view of the turtle database, and thus is unable to break anything
     - Until this finds a permanent home, you'll probably want to ``$ alias turtlecli=~monctrl/bin/turtlecli``
-    - Queries use exact matching, which can be confusing because some people's names are misspelled
     - More complete help is available via the ``--help`` argument
 
 Example Usage
@@ -62,7 +61,7 @@ Note that buffer here grabs scripts that were executed within +- 1 hour of the g
 
 .. code-block:: bash
 
-    $ ~monctrl/bin/turtlecli --time 'Feb 3 2014 3am' --buffer 1
+    $ ~monctrl/bin/turtlecli --times 'Feb 3 2014 3am' --buffer 1
     Displaying scripts that occurred within 1:00:00 hours of 2014-02-03 03:00:00, ordered by datetime (descending)
         Project Name    Script Name    Executed (EST)       Observer    Operator    State
     --  --------------  -------------  -------------------  ----------  ----------  --------------
