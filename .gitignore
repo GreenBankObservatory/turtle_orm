@@ -2,3 +2,8 @@
 *turtle-orm-env
 *.sublime-workspace
 *.sql
+turtle_orm/settings.py
+rhel6-env
+rhel7-env
+rhel7-venv
+__pycache__
