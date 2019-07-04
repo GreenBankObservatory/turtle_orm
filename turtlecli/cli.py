@@ -25,12 +25,12 @@ from turtlecli.filters import (
 )
 from turtlecli.utils import (
     genHistoryTable,
-    order_type,
     in_ipython,
     formatSql,
     DEFAULT_HISTORY_TABLE_FIELDNAMES,
     get_console_width,
     format_date_time,
+    iterable_to_fancy_string,
 )
 from turtlecli.reports import DiffReport, LogReport, ScriptReport
 from turtlecli.gitify import gitify
@@ -114,6 +114,7 @@ def parse_args():
     things_group.add_argument(
         "-p",
         "--projects",
+        "--project-names",
         metavar="PROJECT",
         nargs="+",
         help="The name(s) of the project(s). If multiple projects are given, "
@@ -122,6 +123,7 @@ def parse_args():
     things_group.add_argument(
         "-s",
         "--scripts",
+        "--script-names",
         metavar="SCRIPT",
         nargs="+",
         help="The name(s) of the script(s). If multiple scripts are given, "
@@ -191,8 +193,9 @@ def parse_args():
     # TODO: Allow multiple options here
     time_group.add_argument(
         "-t",
-        "--time",
+        "--times",
         metavar="DATETIME",
+        nargs="+",
         type=dp.parse,
         help="Script execution time (note: any reasonable datetime "
         "format will work here). This works in conjunction with --buffer to "
@@ -224,7 +227,6 @@ def parse_args():
     sorting_group.add_argument(
         "-S",
         "--sort-by",
-        type=order_type,
         default="datetime",
         # These are simply what I consider a reasonable set of things to filter by
         choices=["id", "obsprocedure", "observer", "operator", "datetime"],
@@ -350,19 +352,10 @@ def parse_args():
             )
 
     ### Additional error checking ###
-    # Ensure that the many time-related options aren't given together
-    time_arg_bools = [bool(args.time), bool(args.last), bool(args.after or args.before)]
-    if time_arg_bools.count(True) > 1:
-        parser.error(
-            "Only one of {}, {}, or {} may be given".format(
-                "--time", "--last", "(--after or --before)"
-            )
-        )
-
     buffer_given = args.buffer != parser.get_default("buffer")
     # Ensure that --buffer isn't given without --time
-    if buffer_given and not parser.get_default("time") == args.time:
-        parser.error("--buffer has no effect if --time is not given!")
+    # if buffer_given and parser.get_default("times") not in args.times:
+    #     parser.error("--buffer has no effect if --times is not given!")
 
     if buffer_given and (
         parser.get_default("last") != args.last
@@ -370,7 +363,7 @@ def parse_args():
         or parser.get_default("before") != args.before
     ):
         parser.error(
-            "--buffer has no effect on time-related options other than --time!"
+            "--buffer has no effect on time-related options other than --times!"
         )
     # Ensure that the buffer isn't negative
     if args.buffer < 0:
@@ -418,22 +411,38 @@ def main():
     results = History.objects.all()
     if args.projects:
         plural = "s" if args.projects and len(args.projects) > 1 else ""
-        description_parts.append("for project{} {}".format(plural, args.projects))
+        description_parts.append(
+            "for project name{} {}".format(
+                plural, iterable_to_fancy_string(args.projects, quote=True, word="or")
+            )
+        )
         results &= filterByProject(args.projects, fuzzy=args.fuzzy, regex=args.regex)
 
     if args.scripts:
         plural = "s" if args.scripts and len(args.scripts) > 1 else ""
-        description_parts.append("for script{} {}".format(plural, args.scripts))
+        description_parts.append(
+            "for script name{} {}".format(
+                plural, iterable_to_fancy_string(args.scripts, quote=True, word="or")
+            )
+        )
         results &= filterByScript(args.scripts, regex=args.regex)
 
     if args.observers:
         plural = "s" if args.observers and len(args.observers) > 1 else ""
-        description_parts.append("by observer{} {}".format(plural, args.observers))
+        description_parts.append(
+            "by observer name{} {}".format(
+                plural, iterable_to_fancy_string(args.observers, quote=True, word="or")
+            )
+        )
         results &= filterByObserver(args.observers, fuzzy=args.fuzzy, regex=args.regex)
 
     if args.operators:
         plural = "s" if args.operators and len(args.operators) > 1 else ""
-        description_parts.append("with operator{} {}".format(plural, args.operators))
+        description_parts.append(
+            "with operator name{} {}".format(
+                plural, iterable_to_fancy_string(args.operators, quote=True, word="or")
+            )
+        )
         results &= filterByOperator(args.operators, fuzzy=args.fuzzy, regex=args.regex)
 
     if args.state:
@@ -442,15 +451,25 @@ def main():
         description_parts.append("with state {}".format(state))
         results &= History.objects.filter(executed_state=state)
 
-    if args.time:
-        start = args.time - args.buffer
-        end = args.time + args.buffer
+    if args.times:
+        time_bits = History.objects.none()
+        stubs = []
+        for time in args.times:
+            start = time - args.buffer
+            end = time + args.buffer
+            stubs.append(
+                "{} {} of {} (i.e. between {} and {})".format(
+                    getattr(args.buffer, args.unit), args.unit, time, start, end
+                )
+            )
+            time_bits |= filterByRange(start, end)
+
         description_parts.append(
-            "that occurred within {} {} of {} (i.e. between {} and {})".format(
-                getattr(args.buffer, args.unit), args.unit, args.time, start, end
+            "that occurred within {}".format(
+                iterable_to_fancy_string(stubs, quote=False, word="or")
             )
         )
-        results &= filterByRange(start, end)
+        results &= time_bits
 
     if args.last:
         now = timezone.datetime.now()

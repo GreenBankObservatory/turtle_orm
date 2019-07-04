@@ -129,7 +129,7 @@ def filterByValues(accessor, values, fuzzy=False, regex=False):
                 )
             if regex:
                 results |= History.objects.filter(
-                    **{"{accessor}__regex".format(accessor=accessor): value}
+                    **{"{accessor}__iregex".format(accessor=accessor): value}
                 )
     else:
         CONSOLE_LOGGER.debug(

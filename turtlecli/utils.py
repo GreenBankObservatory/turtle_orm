@@ -125,3 +125,23 @@ def get_console_width():
 
 def format_date_time(dt):
     return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def iterable_to_fancy_string(iterable, quote=False, word="and"):
+    iterable_length = len(iterable)
+    if quote:
+        stringifier = lambda x: repr(str(x))
+    else:
+        stringifier = str
+
+    if iterable_length == 0:
+        return ""
+
+    if iterable_length == 1:
+        return stringifier(list(iterable)[0])
+
+    if iterable_length == 2:
+        return " {} ".format(word).join([stringifier(item) for item in iterable])
+
+    l = [stringifier(item) for item in iterable]
+    return "{}, {} {}".format(", ".join(l[:-1]), word, l[-1])
