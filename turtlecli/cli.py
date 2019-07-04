@@ -75,19 +75,19 @@ def parse_args():
         "-i",
         "--interactive",
         action="store_true",
-        help="Drop into an interactive shell after the " "query is performed",
+        help="Drop into an interactive shell after the query is performed",
     )
     general_group.add_argument(
-        "--fuzzy",
+        "--exact",
         action="store_true",
-        help="Make searches fuzzier (case insensitive, incomplete matches, "
-        "etc.). Note that this will probably be a bit slower.",
+        help="Make searches more precise, and faster. This will perform exact, "
+        "case-insensitive searches on things like observer name, project name, etc.",
     )
     general_group.add_argument(
         "--regex",
         action="store_true",
-        help="Indicates that given search terms are regular expressions. For "
-        "example, if this is given then --project '^AGBT.*72$' would be treated "
+        help="Indicates that given search terms are MySQL-style regular expressions. For "
+        "example, if this is given then --project-names '^AGBT.*72$' would be treated "
         "as a regular expression and all resultls in which the project name starts "
         " with AGBT and ends with 72 would be returned",
     )
@@ -113,8 +113,9 @@ def parse_args():
     )
     things_group.add_argument(
         "-p",
-        "--projects",
         "--project-names",
+        "--project",
+        "--projects",
         metavar="PROJECT",
         nargs="+",
         help="The name(s) of the project(s). If multiple projects are given, "
@@ -122,8 +123,9 @@ def parse_args():
     )
     things_group.add_argument(
         "-s",
-        "--scripts",
         "--script-names",
+        "--script",
+        "--scripts",
         metavar="SCRIPT",
         nargs="+",
         help="The name(s) of the script(s). If multiple scripts are given, "
@@ -307,36 +309,40 @@ def parse_args():
         nargs="+",
         metavar="KEY=VALUE",
         help="Search for one or more keyword=value style statements within observation "
-        "scripts. Note that whitespace DOES NOT matter here.",
+        "scripts. Note that whitespace DOES NOT matter here (though key/value pairs "
+        "must be separated by spaces)",
     )
     advanced_group.add_argument(
         "--script-contains",
         nargs="+",
         metavar="STRING",
-        help="One or more strings that will be searched for " "within scripts",
+        help="One or more strings that will be searched for within scripts (case-insensitive)",
     )
     advanced_group.add_argument(
         "--log-contains",
         nargs="+",
         metavar="STRING",
-        help="One or more strings that will be searched for " "within logs",
+        help="One or more strings that will be searched for within logs (case-insensitive)",
     )
     advanced_group.add_argument(
         "--script-regex",
         nargs="+",
         metavar="REGEX",
-        help="One or more Python-style regular expression that will be "
+        help="One or more MySQL-style regular expression that will be "
         "used to search within scripts",
     )
     advanced_group.add_argument(
         "--log-regex",
         nargs="+",
         metavar="REGEX",
-        help="One or more Python-style regular expression that will be "
+        help="One or more MySQL-style regular expression that will be "
         "used to search within logs",
     )
 
     args = parser.parse_args()
+
+    if args.exact and args.regex:
+        parser.error("--exact cannot be given alongside --regex!")
 
     if args.kwargs:
         # Parse the keyword-value strings inside of kwargs. If there is
@@ -409,23 +415,27 @@ def main():
 
     description_parts = []
     results = History.objects.all()
-    if args.projects:
-        plural = "s" if args.projects and len(args.projects) > 1 else ""
+    if args.project_names:
+        plural = "s" if args.project_names and len(args.project_names) > 1 else ""
         description_parts.append(
             "for project name{} {}".format(
-                plural, iterable_to_fancy_string(args.projects, quote=True, word="or")
+                plural,
+                iterable_to_fancy_string(args.project_names, quote=True, word="or"),
             )
         )
-        results &= filterByProject(args.projects, fuzzy=args.fuzzy, regex=args.regex)
+        results &= filterByProject(
+            args.project_names, fuzzy=not args.exact, regex=args.regex
+        )
 
-    if args.scripts:
-        plural = "s" if args.scripts and len(args.scripts) > 1 else ""
+    if args.script_names:
+        plural = "s" if args.script_names and len(args.script_names) > 1 else ""
         description_parts.append(
             "for script name{} {}".format(
-                plural, iterable_to_fancy_string(args.scripts, quote=True, word="or")
+                plural,
+                iterable_to_fancy_string(args.script_names, quote=True, word="or"),
             )
         )
-        results &= filterByScript(args.scripts, regex=args.regex)
+        results &= filterByScript(args.script_names, regex=args.regex)
 
     if args.observers:
         plural = "s" if args.observers and len(args.observers) > 1 else ""
@@ -434,7 +444,9 @@ def main():
                 plural, iterable_to_fancy_string(args.observers, quote=True, word="or")
             )
         )
-        results &= filterByObserver(args.observers, fuzzy=args.fuzzy, regex=args.regex)
+        results &= filterByObserver(
+            args.observers, fuzzy=not args.exact, regex=args.regex
+        )
 
     if args.operators:
         plural = "s" if args.operators and len(args.operators) > 1 else ""
@@ -443,7 +455,9 @@ def main():
                 plural, iterable_to_fancy_string(args.operators, quote=True, word="or")
             )
         )
-        results &= filterByOperator(args.operators, fuzzy=args.fuzzy, regex=args.regex)
+        results &= filterByOperator(
+            args.operators, fuzzy=not args.exact, regex=args.regex
+        )
 
     if args.state:
         # Argument choices are shortened forms of the possible field values
@@ -572,7 +586,7 @@ def main():
     queries = connections["default"].queries[2:]
     # We only show this if we are logging DEBUG messages, _and_ we are not
     # already logging all SQL queries (that would be redundant)
-    if CONSOLE_LOGGER.level == logging.DEBUG and not args.show_sql:
+    if CONSOLE_LOGGER.level == logging.DEBUG and not args.show_sql and queries:
         CONSOLE_LOGGER.debug("Executed query:\n" + formatSql(queries[-1]["sql"]))
 
     # Sum up query time from all relevant queries
@@ -599,8 +613,8 @@ def main():
         print(genHistoryTable(df, verbose=args.verbose or log_level == "DEBUG"))
     else:
         print("No scripts found {}".format(", ".join(description_parts)))
-        if not args.fuzzy:
-            CONSOLE_LOGGER.info("Try again with --fuzzy to perform substring searches")
+        if args.exact:
+            CONSOLE_LOGGER.info("Try again without --exact to perform fuzzy searches")
         if not args.regex:
             CONSOLE_LOGGER.info(
                 "Try again with --regex to treat given arguments as regular expressions"
@@ -678,13 +692,9 @@ def excepthook(type, value, traceback):
 if __name__ == "__main__":
     main()
 
-# TODO: Show defaults in help
 # TODO: Handle &= operator for queries. Some sort of option will be needed
-# TODO: Flesh out logging
 # TODO: Finish refactoring of codebase
 # TODO: Consider subcommands for things like "Show me details about a specific ObsProcedure" -- this is history-centric so far
-# TODO: Port over the code from findObsScript that handles parsing of config keywords
-# TODO: Provide easy way to search scheduling block executions (from log files)?
 # TODO: Add --interactive-reports
 # TODO: Unit tests!
 # TODO: Sphinx documentation -- how best to document each argument (with examples)?
