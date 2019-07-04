@@ -1,7 +1,13 @@
 """QuerySet Filters for History model"""
 
+from datetime import timedelta
+import os
+from glob import glob
 import re
 import logging
+
+from astropy.io import fits
+import dateutil.parser as dp
 
 from tortoise.models import History
 
@@ -9,7 +15,8 @@ CONSOLE_LOGGER = logging.getLogger("{}_user".format(__name__))
 
 
 PROJECT_NAME_REGEX = re.compile(
-    r"(?P<year>\d{2,4})(?P<semester>[ABC])[_\s\-]?(?P<code>\d{,10})", re.IGNORECASE
+    r"(?P<prefix>(?P<type>[AT])?\w*)(?P<year>\d{2,4})(?P<semester>[ABC])[_\s\-]?(?P<code>\d{,10})[_\s\-]?(?P<session>\d+)?",
+    re.IGNORECASE,
 )
 
 
@@ -32,9 +39,10 @@ def filterByProject(project_names, fuzzy=False, regex=False):
     given in the "standard" format, then reconstruct them into _another_
     regex. This new regex is actually used in the query. The idea here is to
     handle silly stuff like GBT19A453 not working in the standard/exact search,
-    despite obviously beinv AGBT19A_453
+    despite obviously be AGBT19A_453
     """
     results = History.objects.none()
+    session_filter = History.objects.all()
     for project_name in project_names:
         # If --regex given, do a regex search
         if regex:
@@ -56,19 +64,73 @@ def filterByProject(project_names, fuzzy=False, regex=False):
                 obsprocedure__obsprojectref__name__iexact=project_name
             )
 
-        if fuzzy:
+        if fuzzy and not regex:
             CONSOLE_LOGGER.debug(
                 "Performing a regex search of project names due to fuzzy=True"
             )
-            match = PROJECT_NAME_REGEX.match(project_name)
-            CONSOLE_LOGGER.debug(
-                "Given project name '{project_name}' matches regex '{PROJECT_NAME_REGEX}', "
-                "so it is being transformed into a fuzzy query".format(
-                    project_name=project_name, PROJECT_NAME_REGEX=PROJECT_NAME_REGEX
-                )
-            )
+            match = PROJECT_NAME_REGEX.search(project_name)
             if match:
-                the_regex = "{year}.*{semester}.*{code}".format(**match.groupdict())
+                obs_type = match.groupdict().get("type", None)
+                session = match.groupdict().get("session", None)
+                if session:
+                    if not obs_type or obs_type == "A":
+                        # science_data_path =
+                        scanlog_paths = glob(
+                            "/home/archive/science-data/**/AGBT{year}{semester}_{code}_{session}/ScanLog.fits".format(
+                                **match.groupdict()
+                            )
+                        )
+                    else:
+                        scanlog_paths = glob(
+                            "/home/archive/test-data/**/TGBT{year}{semester}_{code}_{session}/ScanLog.fits".format(
+                                **match.groupdict()
+                            )
+                        )
+                    try:
+                        if len(scanlog_paths) != 1:
+                            raise ValueError("aw man")
+                        scanlog_path = scanlog_paths[0]
+                        scanlog = fits.open(scanlog_path)
+                        start = dp.parse(scanlog[1].data[0][0])
+                        end = dp.parse(scanlog[1].data[-1][0])
+                    except (FileNotFoundError, ValueError, KeyError):
+                        CONSOLE_LOGGER.info(
+                            "Given project name '{project_name}' looks "
+                            "like it includes a session identifier. For whatever reason, "
+                            "Turtle does not store any session information, so we are "
+                            "looking to {scanlog_path} for more. However, it doesn't exist or couldn't be read, so "
+                            "we're simply ignoring the session identifier altogether".format(
+                                project_name=project_name, scanlog_path=scanlog_path
+                            )
+                        )
+                    else:
+                        # Put a little cushion in here to handle slight inconsistencies between turtle and M&C
+                        session_filter = filterByRange(
+                            start - timedelta(minutes=5), end + timedelta(minutes=5)
+                        )
+                        CONSOLE_LOGGER.info(
+                            "Given project name '{project_name}' looks "
+                            "like it includes a session identifier. For whatever reason, "
+                            "Turtle does not store any session information, so we are "
+                            "looking to {scanlog_path} for more. The first scan was executed at "
+                            "{start}, and the last was executed at {end}, so we're "
+                            "using those as the time boundaries for session {session}".format(
+                                project_name=project_name,
+                                start=start,
+                                end=end,
+                                scanlog_path=scanlog_path,
+                                session=session,
+                            )
+                        )
+                CONSOLE_LOGGER.debug(
+                    "Given project name '{project_name}' matches regex '{PROJECT_NAME_REGEX}', "
+                    "so it is being transformed into a fuzzy query".format(
+                        project_name=project_name, PROJECT_NAME_REGEX=PROJECT_NAME_REGEX
+                    )
+                )
+                the_regex = "{prefix}{year}.*{semester}.*{code}".format(
+                    **match.groupdict()
+                )
                 CONSOLE_LOGGER.debug(
                     "'{project_name}' matches regex '{PROJECT_NAME_REGEX}', "
                     "so it is being transformed into a fuzzy query: '{the_regex}'".format(
@@ -87,7 +149,7 @@ def filterByProject(project_names, fuzzy=False, regex=False):
                     )
                 )
 
-    return results
+    return results & session_filter
 
 
 def filterByScript(script_names, regex=False):
