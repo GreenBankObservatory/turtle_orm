@@ -1,17 +1,19 @@
+"""Misc. utilities"""
+
 import logging
 import subprocess
 
 from django.db import connection
 
-from pygments import highlight
-from pygments.lexers import MySqlLexer
-from pygments.formatters import TerminalFormatter
 from colorama import Fore
-import sqlparse
+from pygments import highlight
+from pygments.formatters import TerminalFormatter
+from pygments.lexers import MySqlLexer
 from tabulate import tabulate
+import sqlparse
 
 
-logger = logging.getLogger(__name__)
+CONSOLE_LOGGER = logging.getLogger(__name__)
 
 
 DEFAULT_HISTORY_TABLE_HEADERS = (
@@ -19,7 +21,7 @@ DEFAULT_HISTORY_TABLE_HEADERS = (
     "Script Name",
     # TODO: Verify that this is indeed EST
     # TODO: DST??
-    "Executed (EST)",
+    "Executed (ET)",
     "Observer",
     "Operator",
     "State",
@@ -53,20 +55,16 @@ def genHistoryTable(history_df, headers=None, verbose=False):
     return formatTable(history_df, headers)
 
 
-def order_type(foo):
-    return foo
-
-
 def in_ipython():
     """Determine whether this script is being run via IPython; return bool"""
 
     try:
         __IPYTHON__
     except NameError:
-        # logger.debug("Not in IPython")
+        # CONSOLE_LOGGER.debug("Not in IPython")
         return False
     else:
-        # logger.debug("In IPython")
+        # CONSOLE_LOGGER.debug("In IPython")
         return True
 
 
@@ -106,7 +104,6 @@ def formatSql(sql, indent=False):
             lines.append("    {}".format(line))
         formatted = "\n".join(lines)
 
-    logger.debug("Formatted %s into %s", sql, formatted)
     # Hack to avoid Session being treated as a SQL keyword (converted to SESSION)
     formatted = formatted.replace("SESSION", "Session")
     return highlight(formatted, MySqlLexer(), TerminalFormatter())
@@ -121,11 +118,10 @@ class DjangoSqlFormatter(logging.Formatter):
         return "\n{}".format(formatSql(record.args[1]))
 
 
-# class DjangoSqlFilter(logging.Filter):
-#     def filter(self, record):
-#         return "History" in record.args[1]
-
-
 def get_console_width():
     _, console_width_str = subprocess.check_output(["stty", "size"]).decode().split()
     return int(console_width_str)
+
+
+def format_date_time(dt):
+    return dt.strftime("%Y-%m-%d %H:%M:%S")

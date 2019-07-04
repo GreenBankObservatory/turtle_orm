@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
+"""Commandline Interface to the Turtle DB"""
 
 import argparse
-import inspect
 import logging
 import os
-import pkgutil
 import shlex
 import sys
 
 import dateutil.parser as dp
+from dateutil.relativedelta import relativedelta
 import IPython
 
 from django.utils import timezone
@@ -16,35 +16,28 @@ from django.db.models import Q
 from django.db import connections
 
 from tortoise.models import History
-
 from turtlecli.filters import (
-    filterByTime,
     filterByRange,
     filterByProject,
     filterByScript,
+    filterByObserver,
+    filterByOperator,
 )
-
 from turtlecli.utils import (
     genHistoryTable,
     order_type,
     in_ipython,
-    gen2,
     formatSql,
     DEFAULT_HISTORY_TABLE_FIELDNAMES,
-    timeOfLastQuery,
     get_console_width,
+    format_date_time,
 )
-
 from turtlecli.reports import DiffReport, LogReport, ScriptReport
 from turtlecli.gitify import gitify
 
 
-"""Commandline Interface to the Turtle DB"""
-
-
-file_logger = logging.getLogger("{}_file".format(__name__))
-
-logger = logging.getLogger("{}_user".format(__name__))
+FILE_LOGGER = logging.getLogger("{}_file".format(__name__))
+CONSOLE_LOGGER = logging.getLogger("{}_user".format(__name__))
 
 
 def parse_kwargs(kwargs_list):
@@ -54,9 +47,9 @@ def parse_kwargs(kwargs_list):
     Values will be stripped of whitespace.
     """
     split = [[val.strip() for val in kwarg.split("=")] for kwarg in kwargs_list]
-    logger.debug("Split %s into %s", split, kwargs_list)
+    CONSOLE_LOGGER.debug("Split %s into %s", split, kwargs_list)
     kwargs = {keyword: value for keyword, value in split}
-    logger.debug("Converted %s into %s", split, kwargs)
+    CONSOLE_LOGGER.debug("Converted %s into %s", split, kwargs)
     return kwargs
 
 
@@ -91,6 +84,14 @@ def parse_args():
         "etc.). Note that this will probably be a bit slower.",
     )
     general_group.add_argument(
+        "--regex",
+        action="store_true",
+        help="Indicates that given search terms are regular expressions. For "
+        "example, if this is given then --project '^AGBT.*72$' would be treated "
+        "as a regular expression and all resultls in which the project name starts "
+        " with AGBT and ends with 72 would be returned",
+    )
+    general_group.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -116,7 +117,7 @@ def parse_args():
         metavar="PROJECT",
         nargs="+",
         help="The name(s) of the project(s). If multiple projects are given, "
-        "then results will be shown for all of them",
+        "then results will be shown for all of them. Respects --regex",
     )
     things_group.add_argument(
         "-s",
@@ -126,6 +127,7 @@ def parse_args():
         help="The name(s) of the script(s). If multiple scripts are given, "
         "then results will be shown for all of them. If --projects is "
         "given, only scripts from within the given project will be shown. "
+        "Respects --regex. "
         "NOTE: This option may give unexpected results if --projects is not specified, "
         "since script names are not guaranteed to be unique across all projects!",
     )
@@ -134,14 +136,14 @@ def parse_args():
         "--observers",
         nargs="+",
         metavar="OBSERVER",
-        help="Filter for given observer(s)",
+        help="Filter for given observer(s). Respects --regex",
     )
     things_group.add_argument(
         "-O",
         "--operators",
         nargs="+",
         metavar="OPERATOR",
-        help="Filter for given operator(s)",
+        help="Filter for given operator(s). Respects --regex",
     )
     things_group.add_argument(
         "--state",
@@ -151,7 +153,11 @@ def parse_args():
 
     ### Time Group ###
     time_group = parser.add_argument_group(
-        title="Time", description="Arguments that filter within the time domain"
+        title="Time",
+        description="Arguments that filter within the time domain. "
+        "NOTE: ALL options in this section are with respect to the script "
+        "EXECUTION time! Script termination times are not recorded, though you "
+        "can look within the logs to see roughly when script termination ocurred",
     )
     time_group.add_argument(
         "-l",
@@ -207,20 +213,14 @@ def parse_args():
         "-u",
         "--unit",
         default="hours",
-        # All (reasonable) choices that can be set for timedelta
-        choices=["seconds", "minutes", "hours", "days", "weeks"],
+        # All (reasonable) choices that can be set for relativedelta
+        choices=["seconds", "minutes", "hours", "days", "weeks", "months", "years"],
     )
 
     ### Sorting Group ###
     sorting_group = parser.add_argument_group(
         title="Sorting", description="Arguments specify sorting options"
     )
-    # sorting_group.add_argument(
-    #     '-g', '--group-by',
-    #     default='project',
-    #     # These are simply what I consider a reasonable set of things to filter by
-    #     choices=['id', 'obsprocedure', 'observer', 'operator', 'datetime']
-    # )
     sorting_group.add_argument(
         "-S",
         "--sort-by",
@@ -304,9 +304,8 @@ def parse_args():
         "--kwargs",
         nargs="+",
         metavar="KEY=VALUE",
-        help="Search for keyword=value style statements within observation "
-        "scripts. Note that whitespace DOES NOT matter here. Also note "
-        "that this is simply a shortcut for --script-contains.",
+        help="Search for one or more keyword=value style statements within observation "
+        "scripts. Note that whitespace DOES NOT matter here.",
     )
     advanced_group.add_argument(
         "--script-contains",
@@ -351,7 +350,6 @@ def parse_args():
             )
 
     ### Additional error checking ###
-
     # Ensure that the many time-related options aren't given together
     time_arg_bools = [bool(args.time), bool(args.last), bool(args.after or args.before)]
     if time_arg_bools.count(True) > 1:
@@ -361,15 +359,23 @@ def parse_args():
             )
         )
 
+    buffer_given = args.buffer != parser.get_default("buffer")
     # Ensure that --buffer isn't given without --time
-    # TODO: buffer has a default -- how to handle?
-    # if args.buffer and not args.time:
-    #     parser.error("--buffer has no effect if --time is not given!")
+    if buffer_given and not parser.get_default("time") == args.time:
+        parser.error("--buffer has no effect if --time is not given!")
 
+    if buffer_given and (
+        parser.get_default("last") != args.last
+        or parser.get_default("after") != args.after
+        or parser.get_default("before") != args.before
+    ):
+        parser.error(
+            "--buffer has no effect on time-related options other than --time!"
+        )
     # Ensure that the buffer isn't negative
     if args.buffer < 0:
         parser.error("--buffer value must be greater than 0")
-    args.buffer = timezone.timedelta(**{args.unit: args.buffer})
+    args.buffer = relativedelta(**{args.unit: args.buffer})
 
     if args.output != parser.get_default("output") and not (
         args.save_scripts or args.save_logs or args.export_to_git
@@ -398,48 +404,37 @@ def main():
         # If we are not in verbose mode, then we only output simple errors
         sys.excepthook = excepthook
 
-    # Set our logger level
+    # Set our CONSOLE_LOGGER level
     logging.getLogger("turtlecli").setLevel(log_level)
-    # logger.setLevel(log_level)
-    # Set Django's DB logger level, too
+    CONSOLE_LOGGER.setLevel(log_level)
+    # Set Django's DB CONSOLE_LOGGER level, too
     if args.show_sql:
         logging.getLogger("django.db.backends").setLevel("DEBUG")
 
-    file_logger.info("argv: %s", " ".join([shlex.quote(arg) for arg in sys.argv]))
+    CONSOLE_LOGGER.debug("Done parsing arguments!")
+    FILE_LOGGER.info("argv: %s", " ".join([shlex.quote(arg) for arg in sys.argv]))
 
     description_parts = []
     results = History.objects.all()
     if args.projects:
         plural = "s" if args.projects and len(args.projects) > 1 else ""
         description_parts.append("for project{} {}".format(plural, args.projects))
-        results &= filterByProject(args.projects)
+        results &= filterByProject(args.projects, fuzzy=args.fuzzy, regex=args.regex)
 
     if args.scripts:
         plural = "s" if args.scripts and len(args.scripts) > 1 else ""
         description_parts.append("for script{} {}".format(plural, args.scripts))
-        results &= filterByScript(args.scripts)
+        results &= filterByScript(args.scripts, regex=args.regex)
 
     if args.observers:
         plural = "s" if args.observers and len(args.observers) > 1 else ""
         description_parts.append("by observer{} {}".format(plural, args.observers))
-        if args.fuzzy:
-            query = Q()
-            for observer in args.observers:
-                query = Q(observer__name__icontains=observer)
-            results &= History.objects.filter(query)
-        else:
-            results &= History.objects.filter(observer__name__in=args.observers)
+        results &= filterByObserver(args.observers, fuzzy=args.fuzzy, regex=args.regex)
 
     if args.operators:
         plural = "s" if args.operators and len(args.operators) > 1 else ""
         description_parts.append("with operator{} {}".format(plural, args.operators))
-        if args.fuzzy:
-            query = Q()
-            for operator in args.operators:
-                query = Q(operator__name__icontains=operator)
-            results &= History.objects.filter(query)
-        else:
-            results &= History.objects.filter(operator__name__in=args.operators)
+        results &= filterByOperator(args.operators, fuzzy=args.fuzzy, regex=args.regex)
 
     if args.state:
         # Argument choices are shortened forms of the possible field values
@@ -448,17 +443,26 @@ def main():
         results &= History.objects.filter(executed_state=state)
 
     if args.time:
+        start = args.time - args.buffer
+        end = args.time + args.buffer
         description_parts.append(
-            "that occurred within {} {} of {}".format(args.buffer, args.unit, args.time)
+            "that occurred within {} {} of {} (i.e. between {} and {})".format(
+                getattr(args.buffer, args.unit), args.unit, args.time, start, end
+            )
         )
-        results &= filterByTime(args.time, args.buffer)
+        results &= filterByRange(start, end)
 
     if args.last:
-        description_parts.append(
-            "that occurred within the last {} {}".format(args.last, args.unit)
-        )
         now = timezone.datetime.now()
-        delta_start = now - timezone.timedelta(**{args.unit: args.last})
+        delta_start = now - relativedelta(**{args.unit: args.last})
+        description_parts.append(
+            "that occurred within the last {} {} (i.e. between {} and {})".format(
+                args.last,
+                args.unit,
+                format_date_time(delta_start),
+                format_date_time(now),
+            )
+        )
         results &= filterByRange(delta_start, now)
 
     if args.after or args.before:
@@ -475,6 +479,9 @@ def main():
 
     # Handle script contains
     if args.script_contains:
+        description_parts.append(
+            "with script containing: {}".format(args.script_contains)
+        )
         query = Q()
         for contains in args.script_contains:
             query |= Q(executed_script__icontains=contains)
@@ -483,6 +490,7 @@ def main():
 
     # Handle log contains
     if args.log_contains:
+        description_parts.append("with log containing: {}".format(args.log_contains))
         query = Q()
         for contains in args.log_contains:
             query |= Q(log__icontains=contains)
@@ -491,6 +499,7 @@ def main():
 
     # Handle script regex
     if args.script_regex:
+        description_parts.append("with script regex: {}".format(args.script_regex))
         query = Q()
         for regex in args.script_regex:
             query |= Q(executed_script__iregex=regex)
@@ -499,6 +508,7 @@ def main():
 
     # Handle log regex
     if args.log_regex:
+        description_parts.append("with log regex: {}".format(args.log_regex))
         query = Q()
         for regex in args.log_regex:
             query |= Q(log__iregex=regex)
@@ -507,6 +517,7 @@ def main():
 
     # Handle kwargs
     if args.kwargs:
+        description_parts.append("with config kwargs: {}".format(args.kwargs))
         query = Q()
         for keyword, value in args.kwargs.items():
             # TODO: How to also handle &= ?
@@ -535,17 +546,15 @@ def main():
     # if args.group_by:
     #     results = results.group_by(args.group_by)
 
-    # This is where the query is actually executed
+    # THIS IS WHERE THE QUERY IS ACTUALLY EXECUTED
     df = results.to_dataframe(fieldnames=DEFAULT_HISTORY_TABLE_FIELDNAMES)
 
     # First 2 queries are not relevant to us
     queries = connections["default"].queries[2:]
     # We only show this if we are logging DEBUG messages, _and_ we are not
     # already logging all SQL queries (that would be redundant)
-    if logger.level == logging.DEBUG and not args.show_sql:
-        logger.debug("Executed queries:")
-        for query in queries:
-            logger.debug(formatSql(query["sql"]))
+    if CONSOLE_LOGGER.level == logging.DEBUG and not args.show_sql:
+        CONSOLE_LOGGER.debug("Executed query:\n" + formatSql(queries[-1]["sql"]))
 
     # Sum up query time from all relevant queries
     query_time = sum(float(query["time"]) for query in queries)
@@ -558,27 +567,30 @@ def main():
     else:
         limit_str = ""
     plural = "s" if num_results > 1 else ""
-    logger.info(
+    print(
         "Found {} result{} in {:.3f} seconds{}".format(
             num_results, plural, query_time, limit_str
         )
     )
-    file_logger.info(
+    FILE_LOGGER.info(
         "Found {} result{} in {:.3f} seconds".format(num_results, plural, query_time)
     )
     if not df.empty:
-        logger.info("Displaying scripts {}".format(", ".join(description_parts)))
-        logger.info(genHistoryTable(df, verbose=args.verbose))
+        print("Displaying scripts {}".format(", ".join(description_parts)))
+        print(genHistoryTable(df, verbose=args.verbose or log_level == "DEBUG"))
     else:
-        logger.info("No scripts found {}".format(", ".join(description_parts)))
+        print("No scripts found {}".format(", ".join(description_parts)))
         if not args.fuzzy:
-            logger.info("Try again with --fuzzy to perform substring searches")
+            CONSOLE_LOGGER.info("Try again with --fuzzy to perform substring searches")
+        if not args.regex:
+            CONSOLE_LOGGER.info(
+                "Try again with --regex to treat given arguments as regular expressions"
+            )
+    print("")
 
-    logger.info("")
-
-    if args.output:
+    if args.output and args.output != ".":
         os.makedirs(args.output, exist_ok=True)
-        logger.debug("Created directory %s", args.output)
+        CONSOLE_LOGGER.debug("Created directory %s", args.output)
 
     if args.show_scripts or args.save_scripts:
         report = ScriptReport(results, args.interactive)
@@ -590,7 +602,7 @@ def main():
 
     if args.show_diffs:
         if set(results.values_list("obsprocedure__name", flat=True)):
-            logger.warning(
+            CONSOLE_LOGGER.warning(
                 "Multiple script names detected; diffs may not make much sense!"
             )
         DiffReport(results, args.interactive).print_report()
@@ -612,14 +624,14 @@ def main():
     if args.interactive and not in_ipython():
         from tortoise.models import ObsProcedure, Observer, Operator, ObsProjectRef
 
-        logger.info("")
+        CONSOLE_LOGGER.info("")
         r = results
         ar = all_results
-        logger.info("Entering interactive mode")
-        logger.info("Results are available as:")
-        logger.info(
+        CONSOLE_LOGGER.info("Entering interactive mode")
+        CONSOLE_LOGGER.info("Results are available as:")
+        CONSOLE_LOGGER.info(
             "  * A Django QuerySet (see: "
-            "https://docs.djangoproject.com/en/2.0/ref/models/querysets), "
+            "https://docs.djangoproject.com/en/2.2/ref/models/querysets), "
             "in the `r` (limited results) and `ar` (all results) variables. \n"
             "    This contains History objects; available fields are:"
         )
@@ -629,14 +641,14 @@ def main():
                 for field in History._meta.fields
             ]
         )
-        logger.info(field_str)
-        logger.info(
+        CONSOLE_LOGGER.info(field_str)
+        CONSOLE_LOGGER.info(
             "  * As a Pandas DataFrame (see: "
             "https://pandas.pydata.org/pandas-docs/stable/api.html#dataframe) "
             "in the `df` variable."
         )
         IPython.embed(display_banner=False, exit_msg="Hope you had fun!")
-        logger.debug("Exiting interactive mode")
+        CONSOLE_LOGGER.debug("Exiting interactive mode")
 
 
 def excepthook(type, value, traceback):

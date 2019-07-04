@@ -50,8 +50,12 @@ def commit_script_execution(
     output,
     include_log=False,
 ):
-    script_file_name = f"{project_name}.{script_name}.script.py"
-    log_file_name = f"{project_name}.{script_name}.log.py"
+    script_file_name = "{project_name}.{script_name}.script.py".format(
+        project_name=project_name, script_name=script_name
+    )
+    log_file_name = "{project_name}.{script_name}.log.py".format(
+        project_name=project_name, script_name=script_name
+    )
 
     script_file_path = os.path.join(output, script_file_name)
     log_file_path = os.path.join(output, log_file_name)
@@ -72,7 +76,7 @@ def commit_script_execution(
                 "-m",
                 "Commit created by turtlecli",
                 "--date",
-                f"{execution_date}",
+                str(execution_date),
             ],
             cwd=output,
         )

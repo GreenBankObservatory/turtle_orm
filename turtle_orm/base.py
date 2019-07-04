@@ -112,7 +112,7 @@ LOGGING = {
             "format": "%(asctime)s - %(name)s.%(funcName)s - %(levelname)s - %(message)s"
             # 'format': '%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s'
         },
-        "simple": {"format": "%(levelname)s %(message)s"},
+        "simple": {"format": "%(levelname)-8s %(message)s"},
         "super_simple": {"format": "%(message)s"},
         "sql_formatter": {"()": "turtlecli.utils.DjangoSqlFormatter"},
     },
@@ -125,7 +125,7 @@ LOGGING = {
         "console": {
             "level": "DEBUG",
             "class": "logging.StreamHandler",
-            "formatter": "super_simple",
+            "formatter": "simple",
         },
         "console_sql": {
             "level": "DEBUG",
