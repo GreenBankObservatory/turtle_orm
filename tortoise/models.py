@@ -112,7 +112,9 @@ class ObsProjectRef(models.Model):
 class ObsProcedure(models.Model):
     id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=96, help_text="Name of the observation script")
-    session = models.CharField(max_length=16, help_text="Session ID")
+    session = models.CharField(
+        max_length=16, help_text="Session ID <NOTE: THIS IS NOT POPULATED>"
+    )
     script = models.TextField(help_text="Observation script contents")
     obsprojectref = models.ForeignKey("ObsProjectRef", on_delete="PROTECT")
     operator = models.ForeignKey("Operator", on_delete="PROTECT")
@@ -150,31 +152,3 @@ class ObsProcedure(models.Model):
     def full_name(self):
         escaped_name = self.name.replace("/", r"\/")
         return "{}/{}".format(self.obsprojectref.name, escaped_name)
-
-
-class Queue(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    obsprocedure = models.ForeignKey("ObsProcedure", on_delete="PROTECT")
-    # prev = models.ForeignKey('Queue', on_delete='PROTECT')
-    # next = models.ForeignKey('Queue', on_delete='PROTECT')
-    name = models.CharField(max_length=96)
-    script = models.TextField()
-    project = models.ForeignKey("ObsProjectRef", on_delete="PROTECT")
-    session = models.CharField(max_length=16)
-    observer = models.ForeignKey("Observer", on_delete="PROTECT")
-    operator = models.ForeignKey("Operator", on_delete="PROTECT")
-    time_submitted = models.DateTimeField()
-
-    class Meta:
-        managed = False
-        db_table = "Queue"
-
-
-class ConfigScript(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    name = models.CharField(max_length=96, blank=True, null=True)
-    script = models.TextField(blank=True, null=True)
-
-    class Meta:
-        managed = False
-        db_table = "configscript"
