@@ -21,15 +21,13 @@ if cat "$repo_root/turtle_orm/settings.py" |& grep -q "Permission denied"; then
     exit 2
 fi
 
-# If RHEL7...
-if [ "$(get_rhel_version)" == "7" ]; then
-    source "$repo_root/rhel7-env/bin/activate" || die "Could not activate virtual environment"
-elif [ "$(get_rhel_version)" == "6" ]; then
-    source "$repo_root/rhel6-env/bin/activate" || die "Could not activate virtual environment"
+if [ "$(get_rhel_version)" == "6" ]; then
     export LD_LIBRARY_PATH=/users/gbors/python3.5/lib:$LD_LIBRARY_PATH
     export LDFLAGS="-L/users/gbors/python3.5/lib -lrt"
+    source "$repo_root/rhel6-env/bin/activate" || die "Could not activate virtual environment"
+    echo "WARNING: Support for RHEL6 is deprecated, and will be removed in a future release!" >&2
 else
-    die "Unknown RHEL version!"
+    source "$repo_root/rhel7-env/bin/activate" || die "Could not activate virtual environment"
 fi
 
 export DJANGO_SETTINGS_MODULE=turtle_orm.settings
