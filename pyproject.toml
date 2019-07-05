@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "turtle_orm"
+version = "0.1.0"
+description = "An ORM for the Turtle database. Includes a handy CLI for common operations"
+authors = ["Thomas Chamberlin <tchamber@nrao.edu>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.5"
+astropy = "^3.2"
+django = "^2.2"
+django-pandas = "^0.6.1"
+ipdb = "^0.12.0"
+ipython = "^7.6"
+mysqlclient = "^1.4"
+python-dateutil = "^2.8"
+tabulate = "^0.8.3"
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
