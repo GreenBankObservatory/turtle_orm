@@ -42,7 +42,7 @@ def filterByProject(project_names, fuzzy=False, regex=False):
     despite obviously be AGBT19A_453
     """
     results = History.objects.none()
-    session_filter = History.objects.all()
+    session_filter = None
     for project_name in project_names:
         # If --regex given, do a regex search
         if regex:
@@ -91,8 +91,9 @@ def filterByProject(project_names, fuzzy=False, regex=False):
                             raise ValueError("aw man")
                         scanlog_path = scanlog_paths[0]
                         scanlog = fits.open(scanlog_path)
-                        start = dp.parse(scanlog[1].data[0][0])
-                        end = dp.parse(scanlog[1].data[-1][0])
+                        execution_times = sorted(
+                            set(dp.parse(i[0]) for i in scanlog[1].data)
+                        )
                     except (FileNotFoundError, ValueError, KeyError):
                         CONSOLE_LOGGER.info(
                             "Given project name '{project_name}' looks "
@@ -104,10 +105,25 @@ def filterByProject(project_names, fuzzy=False, regex=False):
                             )
                         )
                     else:
-                        # Put a little cushion in here to handle slight inconsistencies between turtle and M&C
-                        session_filter = filterByRange(
-                            start - timedelta(minutes=5), end + timedelta(minutes=5)
-                        )
+                        session_filter = History.objects.none()
+                        if len(execution_times) < 100:
+                            for execution_time in execution_times:
+                                # Put a little cushion in here to handle slight inconsistencies between turtle and M&C
+                                session_filter |= filterByRange(
+                                    execution_time - timedelta(minutes=15),
+                                    execution_time + timedelta(minutes=15),
+                                )
+                        else:
+                            CONSOLE_LOGGER.info(
+                                "Too many scans to perform discrete search; instead search for scripts "
+                                "executed between first and last scan ({start} to {end})".format(
+                                    execution_times[0], execution_times[-1]
+                                )
+                            )
+                            session_filter |= filterByRange(
+                                execution_times[0] - timedelta(minutes=15),
+                                execution_time[-1] + timedelta(minutes=15),
+                            )
                         CONSOLE_LOGGER.info(
                             "Given project name '{project_name}' looks "
                             "like it includes a session identifier. For whatever reason, "
@@ -116,8 +132,8 @@ def filterByProject(project_names, fuzzy=False, regex=False):
                             "{start}, and the last was executed at {end}, so we're "
                             "using those as the time boundaries for session {session}".format(
                                 project_name=project_name,
-                                start=start,
-                                end=end,
+                                start=execution_times[0],
+                                end=execution_times[-1],
                                 scanlog_path=scanlog_path,
                                 session=session,
                             )
@@ -149,7 +165,9 @@ def filterByProject(project_names, fuzzy=False, regex=False):
                     )
                 )
 
-    return results & session_filter
+    if session_filter is not None:
+        results &= session_filter
+    return results
 
 
 def filterByScript(script_names, regex=False):
