@@ -17,20 +17,18 @@ CONSOLE_LOGGER = logging.getLogger(__name__)
 
 
 DEFAULT_HISTORY_TABLE_HEADERS = (
+    "Executed",
     "Project Name",
     "Script Name",
-    # TODO: Verify that this is indeed EST
-    # TODO: DST??
-    "Executed (UTC)",
     "Observer",
     "Operator",
     "State",
 )
 
 DEFAULT_HISTORY_TABLE_FIELDNAMES = (
+    "datetime",
     "obsprocedure__obsprojectref__name",
     "obsprocedure__name",
-    "datetime",
     "observer__name",
     "operator__name",
     "executed_state",
@@ -41,17 +39,27 @@ def formatTable(table, headers):
     return tabulate(table, headers=headers)
 
 
-def genHistoryTable(history_df, headers=None, verbose=False):
+def genHistoryTable(history_df, headers=None, verbose=False, timezone=None):
     if not headers:
         headers = DEFAULT_HISTORY_TABLE_HEADERS
 
-    if len(headers) != len(history_df.columns):
-        raise ValueError("Number of headers must be equal to number of columns!")
+    # Include index as a column!
+    columns = [history_df.index.name, *history_df.columns]
+
+    if len(headers) != len(columns):
+        raise ValueError(
+            "Number of headers ({}) must be equal to number of columns ({})!".format(
+                len(headers), len(columns)
+            )
+        )
     if verbose:
         headers = [
-            "{}\n({})".format(header, field)
-            for header, field in zip(headers, history_df.columns)
+            "{}\n({})".format(header, field) for header, field in zip(headers, columns)
         ]
+
+    if timezone:
+        headers = ["{} ({})".format(headers[0], timezone), *headers[1:]]
+
     return formatTable(history_df, headers)
 
 

@@ -221,6 +221,27 @@ def parse_args():
         # All (reasonable) choices that can be set for relativedelta
         choices=["seconds", "minutes", "hours", "days", "weeks", "months", "years"],
     )
+    time_group.add_argument(
+        "--tz",
+        nargs="?",
+        # This is the value if just --tz is given (no arg)
+        const="America/New_York",
+        metavar="TIMEZONE",
+        type=timezone.pytz.timezone,
+        help="Timezone to translate results into. If given without an argument, "
+        "defaults to America/New_York (GBT timezone). To specify a different time zone, simply "
+        "give the timezone as the argument. If --tz not given at all, then "
+        "UTC is used. See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones "
+        "for a list of valid timezone names",
+    )
+    time_group.add_argument(
+        "--strftime",
+        metavar="FORMAT",
+        # default="%Y-%m-%d %H:%M:%S",
+        help="Set the formatting for datetime output. See "
+        "https://docs.python.org/3.7/library/datetime.html#strftime-strptime-behavior "
+        "for formatting reference",
+    )
 
     ### Sorting Group ###
     sorting_group = parser.add_argument_group(
@@ -580,8 +601,18 @@ def main():
     #     results = results.group_by(args.group_by)
 
     # THIS IS WHERE THE QUERY IS ACTUALLY EXECUTED
-    df = results.to_dataframe(fieldnames=DEFAULT_HISTORY_TABLE_FIELDNAMES)
+    df = results.to_timeseries(
+        fieldnames=DEFAULT_HISTORY_TABLE_FIELDNAMES, index="datetime", verbose=True
+    )
 
+    if args.tz:
+        df.index = df.index.tz_convert(args.tz)
+
+    timezone_str = df.index.tzinfo.zone
+
+    if args.strftime:
+        # Note: after this, column is no longer a DT column!
+        df.index = df.index.strftime(args.strftime)
     # First 2 queries are not relevant to us
     queries = connections["default"].queries[2:]
     # We only show this if we are logging DEBUG messages, _and_ we are not
@@ -610,7 +641,11 @@ def main():
     )
     if not df.empty:
         print("Displaying scripts {}".format(", ".join(description_parts)))
-        print(genHistoryTable(df, verbose=args.verbose or log_level == "DEBUG"))
+        print(
+            genHistoryTable(
+                df, verbose=args.verbose or log_level == "DEBUG", timezone=timezone_str
+            )
+        )
     else:
         print("No scripts found {}".format(", ".join(description_parts)))
         if args.exact:
