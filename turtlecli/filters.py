@@ -25,9 +25,11 @@ def filterByRange(start, end):
 
     results = History.objects.all()
     if start:
+        assert start.tzinfo
         results &= History.objects.filter(datetime__gte=start)
     if end:
         results &= History.objects.filter(datetime__lte=end)
+        assert end.tzinfo
     return results
 
 

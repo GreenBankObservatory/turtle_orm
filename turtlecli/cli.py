@@ -179,7 +179,9 @@ def parse_args():
         type=dp.parse,
         help="Limit to scripts executed after this time (note: any reasonable "
         "datetime format will work here). This time is INCLUSIVE. "
-        "It DOES NOT respect --buffer!",
+        "It DOES NOT respect --buffer! Note: the timezone from --tz will be used "
+        "for this argument. To specify a different timezone, you'll need to specify "
+        "an explict UTC offset",
     )
     time_group.add_argument(
         "-b",
@@ -189,10 +191,10 @@ def parse_args():
         type=dp.parse,
         help="Limit to scripts executed before this time "
         "(note: any reasonable datetime format will work here). This time is "
-        "INCLUSIVE. It DOES NOT respect --buffer!",
+        "INCLUSIVE. It DOES NOT respect --buffer! Note: the timezone from --tz will be used "
+        "for this argument. To specify a different timezone, you'll need to specify "
+        "an explict UTC offset",
     )
-
-    # TODO: Allow multiple options here
     time_group.add_argument(
         "-t",
         "--times",
@@ -201,7 +203,9 @@ def parse_args():
         type=dp.parse,
         help="Script execution time (note: any reasonable datetime "
         "format will work here). This works in conjunction with --buffer to "
-        "find all scripts executed near the given time",
+        "find all scripts executed near the given time. Note: the timezone from --tz will be used "
+        "for this argument. To specify a different timezone, you'll need to specify "
+        "an explict UTC offset",
     )
     time_group.add_argument(
         "-B",
@@ -378,6 +382,17 @@ def parse_args():
                 )
             )
 
+    if args.after and not args.after.tzinfo:
+        args.after = timezone.make_aware(args.after, args.tz)
+
+    if args.before and not args.before.tzinfo:
+        args.before = timezone.make_aware(args.before, args.tz)
+
+    if args.times:
+        args.times = [
+            dt if dt.tzinfo else timezone.make_aware(dt, args.tz) for dt in args.times
+        ]
+
     ### Additional error checking ###
     buffer_given = args.buffer != parser.get_default("buffer")
     # Ensure that --buffer isn't given without --time
@@ -490,11 +505,16 @@ def main():
         time_bits = History.objects.none()
         stubs = []
         for time in args.times:
+            assert time.tzinfo
             start = time - args.buffer
             end = time + args.buffer
             stubs.append(
                 "{} {} of {} (i.e. between {} and {})".format(
-                    getattr(args.buffer, args.unit), args.unit, time, start, end
+                    getattr(args.buffer, args.unit),
+                    args.unit,
+                    format_date_time(time),
+                    format_date_time(start),
+                    format_date_time(end),
                 )
             )
             time_bits |= filterByRange(start, end)
@@ -507,8 +527,16 @@ def main():
         results &= time_bits
 
     if args.last:
-        now = timezone.datetime.now()
+        now = timezone.now()
+        assert now.tzinfo
+
+        # if args.tz:
+        #     now = timezone.make_aware(now, args.tz)
         delta_start = now - relativedelta(**{args.unit: args.last})
+        assert delta_start.tzinfo
+
+        # if args.tz:
+        #     delta_start = timezone.make_aware(now, args.tz)
         description_parts.append(
             "that occurred within the last {} {} (i.e. between {} and {})".format(
                 args.last,
@@ -522,13 +550,19 @@ def main():
     if args.after or args.before:
         if args.after and args.before:
             description_parts.append(
-                "executed after {} but before {}".format(args.after, args.before)
+                "executed after {} but before {}".format(
+                    format_date_time(args.after), format_date_time(args.before)
+                )
             )
         elif args.after or args.before:
             if args.after:
-                description_parts.append("executed after {}".format(args.after))
+                description_parts.append(
+                    "executed after {}".format(format_date_time(args.after))
+                )
             elif args.after:
-                description_parts.append("executed before {}".format(args.before))
+                description_parts.append(
+                    "executed before {}".format(format_date_time(args.before))
+                )
         results &= filterByRange(args.after, args.before)
 
     # Handle script contains
@@ -602,13 +636,16 @@ def main():
 
     # THIS IS WHERE THE QUERY IS ACTUALLY EXECUTED
     df = results.to_timeseries(
-        fieldnames=DEFAULT_HISTORY_TABLE_FIELDNAMES, index="datetime", verbose=True
+        fieldnames=DEFAULT_HISTORY_TABLE_FIELDNAMES, index="datetime"
     )
 
-    if args.tz:
+    if args.tz and results.exists():
         df.index = df.index.tz_convert(args.tz)
 
-    timezone_str = df.index.tzinfo.zone
+    try:
+        timezone_str = df.index.tzinfo.zone
+    except AttributeError:
+        timezone_str = None
 
     if args.strftime:
         # Note: after this, column is no longer a DT column!

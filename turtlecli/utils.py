@@ -132,7 +132,7 @@ def get_console_width():
 
 
 def format_date_time(dt):
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
+    return dt.strftime("%Y-%m-%d %H:%M:%S %z")
 
 
 def iterable_to_fancy_string(iterable, quote=False, word="and"):
