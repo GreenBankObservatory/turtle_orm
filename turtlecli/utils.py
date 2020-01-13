@@ -21,7 +21,7 @@ DEFAULT_HISTORY_TABLE_HEADERS = (
     "Script Name",
     # TODO: Verify that this is indeed EST
     # TODO: DST??
-    "Executed (ET)",
+    "Executed (UTC)",
     "Observer",
     "Operator",
     "State",
