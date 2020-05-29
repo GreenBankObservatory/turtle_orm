@@ -127,7 +127,11 @@ class DjangoSqlFormatter(logging.Formatter):
 
 
 def get_console_width():
-    _, console_width_str = subprocess.check_output(["stty", "size"]).decode().split()
+    _, console_width_str = (
+        subprocess.check_output(["stty", "size"], stderr=subprocess.DEVNULL)
+        .decode()
+        .split()
+    )
     return int(console_width_str)
 
 

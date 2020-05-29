@@ -5,6 +5,7 @@ import argparse
 import logging
 import os
 import shlex
+from subprocess import CalledProcessError
 import sys
 
 import dateutil.parser as dp
@@ -54,8 +55,12 @@ def parse_kwargs(kwargs_list):
 
 
 def parse_args():
-    console_width = get_console_width()
-    width = console_width * 0.8 if console_width > 80 / 0.8 else 80
+    try:
+        console_width = get_console_width()
+    except CalledProcessError:
+        width = None
+    else:
+        width = console_width * 0.8 if console_width > 80 / 0.8 else 80
     parser = argparse.ArgumentParser(
         prog="turtlecli",
         description="A program for easily querying the Turtle database",
