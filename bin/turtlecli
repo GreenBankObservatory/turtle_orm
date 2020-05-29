@@ -32,15 +32,4 @@ fi
 
 export DJANGO_SETTINGS_MODULE=turtle_orm.settings
 
-# Assume that if aren't in an SSH tunnel then we aren't on a suitable host for querying
-if [ -z "$SSH_CONNECTION" ]; then
-    echo "WARNING: This will be very slow on your workstation! Consider ssh'ing to a data processing machine." >&2
-    echo "Continue? [y/n] "
-    read -r response
-    if [ "${response,,}" != "y" ]; then
-        echo "Well alright then! (To avoid this in the future, run: SSH_CONNECTION=FOO turtlecli $*" >&2
-        exit 2
-    fi
-fi
-
 PYTHONPATH="$repo_root":$PYTHONPATH python -m turtlecli "$@"
