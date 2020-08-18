@@ -56,7 +56,7 @@ class TurtleReport:
                     file.write(self.gen_result_report(result))
                 except Exception as error:
                     logger.error("Failed to generate filename for {result}; skipping".format(result=result))
-
+                    breakpoint()
             logger.debug(
                 "Saved {result} to {full_path}".format(
                     result=result, full_path=full_path
