@@ -52,7 +52,10 @@ class TurtleReport:
         for result in self.result_generator:
             full_path = os.path.join(path, self.gen_filename(result))
             with open(full_path, "w") as file:
-                file.write(self.gen_result_report(result))
+                try:
+                    file.write(self.gen_result_report(result))
+                except Exception as error:
+                    logger.error("Failed to generate filename for {result}; skipping".format(result=result))
 
             logger.debug(
                 "Saved {result} to {full_path}".format(
@@ -107,7 +110,7 @@ class ScriptReport(TurtleReport):
             script=result.obsprocedure.name,
             exec=result.datetime,
         ).replace(" ", "_")
-
+        
     def gen_result_header(self, result):
         return "Contents of scripts executed at {exec}".format(exec=result.datetime)
 
